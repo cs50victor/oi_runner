@@ -1,18 +1,23 @@
-use std::{cmp::min, fs::File, io::{Read, Seek as _, Stdin, Write as _}, path::PathBuf, process::{Command, Stdio}};
+use std::{
+    cmp::min,
+    fs::File,
+    io::Write as _,
+    path::PathBuf,
+    process::{Command, Stdio},
+};
 
 use anyhow::bail;
 use futures_lite::StreamExt as _;
 use log::info;
 use reqwest::Client;
 
-
 #[derive(Debug)]
 pub enum Runner {
     PythonAndUv,
-    Rye
+    Rye,
 }
 
-const VALID_PYTHON_VERSION : &str = "3.11";
+const VALID_PYTHON_VERSION: &str = "3.11";
 
 #[cfg(target_os = "macos")]
 const SHELL: &str = "zsh";
@@ -21,50 +26,60 @@ const SHELL: &str = "sh";
 #[cfg(windows)]
 const SHELL: &str = "powershell";
 
-///  check if rye exists
-///     if it does, use it as default toolchain
-///  else if a valid python version exists
-///     if uv
-///         use python and uv 
-///     download uv
-///     use python and uv
-///   else download and install rye 
-///    return rye as default toolchain
+
 pub async fn get_runner(http_client: &Client) -> anyhow::Result<Runner> {
-    if bin_exists("rye")?{
-        // return Ok(Runner::Rye);
+    if bin_exists("rye")? {
+        info!("rye exists, using rye as runner");
+        return Ok(Runner::Rye);
     }
-    let valid_python_version_exists = ["python3.11", "python", "py"].iter().any(|p|{
-        let o = std::process::Command::new(SHELL).args(["-c", &format!("{p} --version")]).output().unwrap();
-        std::str::from_utf8(&o.stdout).unwrap().trim().to_lowercase().contains(VALID_PYTHON_VERSION)
+    let valid_python_version_exists = ["python3.11", "python", "py"].iter().any(|p| {
+        let o = std::process::Command::new(SHELL)
+            .args(["-c", &format!("{p} --version")])
+            .output()
+            .unwrap();
+        std::str::from_utf8(&o.stdout)
+            .unwrap()
+            .trim()
+            .to_lowercase()
+            .contains(VALID_PYTHON_VERSION)
     });
 
     if valid_python_version_exists {
-        info!("valid python version exists");
-        if !bin_exists("uv")? && download_uv().await.is_ok() {
+        info!("a valid python version exists");
+        let uv_exists = bin_exists("uv")?;
+        if uv_exists || download_uv().await.is_ok(){
             return Ok(Runner::PythonAndUv);
-        };
+        }
     }
+    info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
+    
+    info!("installing rye");
     // successfully download rye, and check it exists on user's system
     download_rye(http_client).await?;
 
     Ok(Runner::Rye)
 }
 
-fn bin_exists(bin_name: &str) -> anyhow::Result<bool>{
-    let o = std::process::Command::new(SHELL).args(["-c", &format!("command -v {bin_name}")]).output()?;
+fn bin_exists(bin_name: &str) -> anyhow::Result<bool> {
+    let o = std::process::Command::new(SHELL)
+        .args(["-c", &format!("command -v {bin_name}")])
+        .output()?;
 
     info!("{bin_name} | {o:?}");
 
     Ok(!o.stdout.is_empty())
 }
 
-async fn download_uv() -> anyhow::Result<()>  {
+async fn download_uv() -> anyhow::Result<()> {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let o = Command::new(SHELL).args(["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"]).output()?;
+    let o = Command::new(SHELL)
+        .args(["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"])
+        .output()?;
     #[cfg(windows)]
-    let o = Command::new(SHELL).args(["-c", "irm https://astral.sh/uv/install.ps1 | iex"]).output()?;
-    
+    let o = Command::new(SHELL)
+        .args(["-c", "irm https://astral.sh/uv/install.ps1 | iex"])
+        .output()?;
+
     info!("rye curl installer resp | {o:#?}");
 
     if !bin_exists("uv")? {
@@ -77,7 +92,6 @@ async fn download_uv() -> anyhow::Result<()>  {
 // install rye without downloading additional dependencies
 // /usr/bin/gunzip
 // /usr/bin/curl
-// curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION="3.11.9" RYE_INSTALL_OPTION="--yes" sh
 pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     if cfg!(not(any(target_arch = "aarch64", target_arch = "x86_64"))) {
         if cfg!(not(any(target_os = "macos", target_os = "linux"))) {
@@ -89,14 +103,12 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
         let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" sh"]).output()?;
 
         info!("rye curl installer resp | {o:#?}");
-        
 
         if !bin_exists("rye")? {
             bail!("{}", std::str::from_utf8(&o.stderr).unwrap());
         }
         return Ok(());
     }
-
 
     let rye_file_name = format!("rye-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
     let rye_gz_url =
@@ -116,7 +128,10 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
         std::fs::remove_file(&rye_installer_path)?;
     }
 
-    info!("extracting rye installer bytes {} to  {rye_installer_path:?}", rye_gz.bytes.len());
+    info!(
+        "extracting rye installer bytes {} to  {rye_installer_path:?}",
+        rye_gz.bytes.len()
+    );
     // extract to temp file (creating it in the process if it doesn't exist)
     decode_gz_bytes_to_file(rye_gz.bytes.into(), &PathBuf::from(&rye_installer_path))?;
 
@@ -142,7 +157,7 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Uncompresses a Gz Encoded vector
+/// Uncompress a Gz Encoded vector
 #[allow(unused_assignments)]
 fn decode_gz_bytes_to_file(bytes: Vec<u8>, path: &PathBuf) -> anyhow::Result<()> {
     let mut extracted_file = File::create(path)?;
@@ -152,27 +167,25 @@ fn decode_gz_bytes_to_file(bytes: Vec<u8>, path: &PathBuf) -> anyhow::Result<()>
     extracted_file = decoder.finish()?;
     Ok(())
 }
-// let res = reqwest::get("http://my.api.host/data.json").await;
-// info!("{:?}", res.status()); // e.g. 200
-// info!("{:?}", res.text().await); // e.g Ok("{ Content }")
 
 #[derive(Default)]
 pub struct DownloadResult {
     bytes: bytes::BytesMut,
 }
 
-pub async fn download_file<'a>(
-    client: &Client,
-    url: &str,
-) -> Result<DownloadResult, String> {
-    // let x = reqwest::Client
+pub async fn download_file<'a>(client: &Client, url: &str) -> Result<DownloadResult, String> {
     let mut downloaded = 0_u64;
 
     let mut download_resp = DownloadResult::default();
 
-    let res = client.get(url).send().await.or(Err(format!("Failed to GET from '{}'", &url)))?;
-    let total_size =
-        res.content_length().ok_or(format!("Failed to get content length from '{}'", &url))?;
+    let res = client
+        .get(url)
+        .send()
+        .await
+        .or(Err(format!("Failed to GET from '{}'", &url)))?;
+    let total_size = res
+        .content_length()
+        .ok_or(format!("Failed to get content length from '{}'", &url))?;
 
     if downloaded >= total_size {
         info!("File already completed downloaded.");
@@ -186,18 +199,10 @@ pub async fn download_file<'a>(
         let chunk = item.or(Err("Error while downloading file".to_string()))?;
         download_resp.bytes.extend(&chunk);
         downloaded = min(downloaded + (chunk.len() as u64), total_size);
-        info!("downloaded {:.2}%", (downloaded as f64 / total_size as f64) * 100.0);
+        info!(
+            "downloaded {:.2}%",
+            (downloaded as f64 / total_size as f64) * 100.0
+        );
     }
     Ok(download_resp)
 }
-
-// #[cfg(test)]
-// mod tests {
-    // use super::*;
-
-    // #[test]
-    // fn it_works() {
-    //     let result = add(2, 2);
-    //     assert_eq!(result, 4);
-    // }
-// }
