@@ -1,7 +1,4 @@
-[package]
-name = "oi_runner"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+members = ["example", "oi_runner"]
+resolver = "2"
 
-[dependencies]
-flate2 = "1.0.30"

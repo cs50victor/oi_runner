@@ -1,0 +1,12 @@
+[package]
+name = "oi_runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.86"
+bytes = "1.6.0"
+flate2 = "1.0.30"
+futures-lite = "2.3.0"
+log = "0.4.21"
+reqwest = { version = "0.12.4", features = ["stream", "rustls-tls"] }
