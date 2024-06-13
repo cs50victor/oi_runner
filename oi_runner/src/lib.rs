@@ -1,21 +1,15 @@
 use std::{
     cmp::min,
-    fs::File,
+    fs::{remove_dir_all, File},
     io::Write as _,
     path::PathBuf,
-    process::{Command, Stdio},
+    process::{Command, Output, Stdio},
 };
 
 use anyhow::bail;
 use futures_lite::StreamExt as _;
 use log::info;
 use reqwest::Client;
-
-#[derive(Debug)]
-pub enum Runner {
-    PythonAndUv,
-    Rye,
-}
 
 const VALID_PYTHON_VERSION: &str = "3.11";
 
@@ -27,13 +21,91 @@ const SHELL: &str = "sh";
 const SHELL: &str = "powershell";
 
 
+
+#[derive(Debug)]
+pub enum Runner {
+    PythonAndUv,
+    Rye,
+}
+
+pub fn output_to_string(output: &Output) -> anyhow::Result<String>{
+    Ok(format!(
+        "( status {:?} | stderr {} | stdout {}",
+        output.status,
+        std::str::from_utf8(&output.stderr)?,
+        std::str::from_utf8(&output.stdout)?
+    ))
+}
+impl Runner {
+    pub fn create_venv(&self, desired_venv_path: PathBuf) -> anyhow::Result<()> {
+        if desired_venv_path.exists() {
+            remove_dir_all(&desired_venv_path)?;
+        }
+        let parent_dir = match desired_venv_path.parent(){
+            Some(dir) => dir,
+            None => bail!("failed to find parent dir to {desired_venv_path:?}"),
+        };
+        let o = match self {
+            Runner::PythonAndUv => Command::new("uv").args(["venv", "-p", VALID_PYTHON_VERSION, (desired_venv_path.to_str().unwrap())]).output()?,
+            // ensure a "pyproject.toml" file exists in this directory
+            Runner::Rye => Command::new(SHELL).args(["-c", &format!("cd {parent_dir:?} && rye sync")]).output()?,
+        };
+
+        info!("python virtual environment creation result | {}", output_to_string(&o)?);
+
+        if !desired_venv_path.exists() {
+            bail!("venv creation script ran but venv_path wasn't created. weird");
+        }
+        Ok(())
+    }
+
+    pub fn get_source_cmd(&self, venv_path: PathBuf) -> anyhow::Result<String> {
+        #[cfg(windows)]
+        let venv_path_str = venv_path.join("Scripts\\activate");
+        #[cfg(unix)]
+        let venv_path_str = venv_path.join("bin/activate");
+
+        match venv_path_str.to_str() {
+            Some(p) => Ok(p.to_owned()),
+            None => bail!("couldn't create venv path"),
+        }
+    }
+    
+    pub fn install_pip_packages(&self, venv_path: PathBuf, requirements_file_path: PathBuf) -> anyhow::Result<()>{
+        match self {
+            // rye sync already handles package installation from pyproject.toml
+            Runner::Rye => Ok(()),
+            Runner::PythonAndUv => {
+                let source_cmd = self.get_source_cmd(venv_path)?;
+
+                #[cfg(unix)]
+                let source_and_pip_install_cmd =
+                    &format!("source {source_cmd} && uv pip install -r {requirements_file_path:?}");
+                
+                #[cfg(windows)]
+                let source_and_pip_install_cmd =
+                    &format!("{source_cmd} && uv pip install -r {requirements_file_path:?}");
+
+                #[cfg(unix)]
+                let o = Command::new(SHELL).args(["-c", source_and_pip_install_cmd]).output()?;
+                
+                #[cfg(windows)]
+                let o = Command::new(source_and_pip_install_cmd).output()?;
+                
+                info!("source and uv pip install output > {}",output_to_string(&o)?);
+                Ok(())
+            },
+        }
+    }
+}
+
 pub async fn get_runner(http_client: &Client) -> anyhow::Result<Runner> {
     if bin_exists("rye")? {
         info!("rye exists, using rye as runner");
         return Ok(Runner::Rye);
     }
-    let valid_python_version_exists = ["python3.11", "python", "py"].iter().any(|p| {
-        let o = std::process::Command::new(SHELL)
+    let valid_python_version_exists = ["python3.11", "python3" , "python", "py"].iter().any(|p| {
+        let o = Command::new(SHELL)
             .args(["-c", &format!("{p} --version")])
             .output()
             .unwrap();
@@ -61,7 +133,7 @@ pub async fn get_runner(http_client: &Client) -> anyhow::Result<Runner> {
 }
 
 fn bin_exists(bin_name: &str) -> anyhow::Result<bool> {
-    let o = std::process::Command::new(SHELL)
+    let o = Command::new(SHELL)
         .args(["-c", &format!("command -v {bin_name}")])
         .output()?;
 
@@ -137,12 +209,12 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
 
     // chmod installer path (chmod +x ./rye-aarch64-macos)
     info!("giving permission to rye installer binary {rye_installer_path:?}");
-    std::process::Command::new(SHELL)
+    Command::new(SHELL)
         .args(["-c", &format!("chmod +x {rye_installer_path:?}")])
         .output()?;
     // run rye installer
     info!("running rye installer binary {rye_installer_path:?}");
-    let installer = std::process::Command::new(SHELL)
+    let installer = Command::new(SHELL)
         .stdin(Stdio::null())
         .env("RYE_TOOLCHAIN_VERSION", "3.11.9")
         .args(["-c", &format!("/{rye_installer_path:?} self install --yes")])
@@ -195,14 +267,21 @@ pub async fn download_file<'a>(client: &Client, url: &str) -> Result<DownloadRes
     let mut stream = res.bytes_stream();
 
     // let downloaded_bytes = bytes::BytesMut::new();
+    let mut curr_percentage = 0.0;
     while let Some(item) = stream.next().await {
         let chunk = item.or(Err("Error while downloading file".to_string()))?;
         download_resp.bytes.extend(&chunk);
         downloaded = min(downloaded + (chunk.len() as u64), total_size);
-        info!(
-            "downloaded {:.2}%",
-            (downloaded as f64 / total_size as f64) * 100.0
-        );
+        curr_percentage = (downloaded as f64 / total_size as f64) * 100.0;
+        if curr_percentage % 10.0 == 0.0 || curr_percentage % 5.0 == 0.0 {
+            info!(
+                "downloaded {:.2}%",
+                curr_percentage
+            );
+
+        }
     }
     Ok(download_resp)
 }
+
+// TODO: add tests
