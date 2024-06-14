@@ -116,16 +116,16 @@ pub async fn get_runner(http_client: &Client) -> anyhow::Result<Runner> {
         info!("rye exists, using rye as runner");
         return Ok(Runner::Rye);
     }
-    // let valid_python_version_exists = get_python_bin_name().is_ok();
+    let valid_python_version_exists = get_python_bin_name().is_ok();
 
-    // if valid_python_version_exists {
-    //     info!("a valid python version exists");
-    //     let uv_exists = bin_exists("uv")?;
-    //     if uv_exists || download_uv().await.is_ok(){
-    //         return Ok(Runner::PythonAndUv);
-    //     }
-    // }
-    // info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
+    if valid_python_version_exists {
+        info!("a valid python version exists");
+        let uv_exists = bin_exists("uv")?;
+        if uv_exists || download_uv().await.is_ok(){
+            return Ok(Runner::PythonAndUv);
+        }
+    }
+    info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
     
     info!("installing rye");
     // successfully download rye, and check it exists on user's system
@@ -174,16 +174,16 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
         bail!("Unsupported CPU architecture | Not aarch64 or x86_64");
     };
 
-    // if bin_exists("gunzip")? && bin_exists("curl")? {
-    //     let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" sh"]).output()?;
+    if bin_exists("gunzip")? && bin_exists("curl")? {
+        let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" sh"]).output()?;
 
-    //     info!("rye curl installer resp | {o:#?}");
+        info!("rye curl installer resp | {o:#?}");
 
-    //     if !bin_exists("rye")? {
-    //         bail!("{}", std::str::from_utf8(&o.stderr).unwrap());
-    //     }
-    //     return Ok(());
-    // }
+        if !bin_exists("rye")? && !bin_exists(&format!("{:?}/.rye/shims/rye", std::env::var_os("HOME").unwrap_or_default()))?  {
+            bail!("{}", std::str::from_utf8(&o.stderr).unwrap());
+        }
+        return Ok(());
+    }
 
     let rye_file_name = format!("rye-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
     let rye_gz_url =
@@ -229,10 +229,9 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
         .output()?;
 
     info!("installer output {installer:?}");
-
-    let default_rye_bin_path = format!("{:?}/.rye/shims/rye", std::env::var_os("HOME").unwrap_or_default());
-
-    if !bin_exists("rye")? && !bin_exists(&default_rye_bin_path)? {
+    
+    // rye bin or default rye bin path
+    if !bin_exists("rye")? && !bin_exists(&format!("{:?}/.rye/shims/rye", std::env::var_os("HOME").unwrap_or_default()))? {
         bail!("{}", std::str::from_utf8(&installer.stderr).unwrap());
     }
 
