@@ -1,9 +1,5 @@
 use std::{
-    cmp::min,
-    fs::{remove_dir_all, File},
-    io::Write as _,
-    path::PathBuf,
-    process::{Command, Output, Stdio},
+    cmp::min, env::var_os, fs::{remove_dir_all, File}, io::Write as _, path::PathBuf, process::{Command, Output, Stdio}
 };
 
 use anyhow::{anyhow, bail};
@@ -120,16 +116,16 @@ pub async fn get_runner(http_client: &Client) -> anyhow::Result<Runner> {
         info!("rye exists, using rye as runner");
         return Ok(Runner::Rye);
     }
-    let valid_python_version_exists = get_python_bin_name().is_ok();
+    // let valid_python_version_exists = get_python_bin_name().is_ok();
 
-    if valid_python_version_exists {
-        info!("a valid python version exists");
-        let uv_exists = bin_exists("uv")?;
-        if uv_exists || download_uv().await.is_ok(){
-            return Ok(Runner::PythonAndUv);
-        }
-    }
-    info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
+    // if valid_python_version_exists {
+    //     info!("a valid python version exists");
+    //     let uv_exists = bin_exists("uv")?;
+    //     if uv_exists || download_uv().await.is_ok(){
+    //         return Ok(Runner::PythonAndUv);
+    //     }
+    // }
+    // info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
     
     info!("installing rye");
     // successfully download rye, and check it exists on user's system
@@ -177,16 +173,17 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
         }
         bail!("Unsupported CPU architecture | Not aarch64 or x86_64");
     };
-    if !bin_exists("gunzip")? && bin_exists("curl")? {
-        let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" sh"]).output()?;
 
-        info!("rye curl installer resp | {o:#?}");
+    // if bin_exists("gunzip")? && bin_exists("curl")? {
+    //     let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" sh"]).output()?;
 
-        if !bin_exists("rye")? {
-            bail!("{}", std::str::from_utf8(&o.stderr).unwrap());
-        }
-        return Ok(());
-    }
+    //     info!("rye curl installer resp | {o:#?}");
+
+    //     if !bin_exists("rye")? {
+    //         bail!("{}", std::str::from_utf8(&o.stderr).unwrap());
+    //     }
+    //     return Ok(());
+    // }
 
     let rye_file_name = format!("rye-{}-{}", std::env::consts::ARCH, std::env::consts::OS);
     let rye_gz_url =
@@ -195,7 +192,11 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     let rye_gz = download_file(client, rye_gz_url).await?;
 
     let system_temp_dir = Command::new(SHELL).args(["-c", "echo $TMPDIR"]).output()?;
+    let temp_dir = std::env::temp_dir();
+    let temp_var_os = var_os("TMPDIR");
+    info!("std temp dir {temp_dir:?} | {temp_var_os:?}");
     let system_temp_dir = PathBuf::from(std::str::from_utf8(&system_temp_dir.stdout)?.trim());
+    info!("system_temp_dir | {system_temp_dir:?}");
     let rye_installer_path = system_temp_dir.join(".ryeinstaller.oi");
     info!("rye_installer_path | {rye_installer_path:?}");
 
@@ -229,7 +230,9 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
 
     info!("installer output {installer:?}");
 
-    if !bin_exists("rye")? {
+    let default_rye_bin_path = format!("{:?}/.rye/shims/rye", std::env::var_os("HOME").unwrap_or_default());
+
+    if !bin_exists("rye")? && !bin_exists(&default_rye_bin_path)? {
         bail!("{}", std::str::from_utf8(&installer.stderr).unwrap());
     }
 
@@ -274,18 +277,18 @@ pub async fn download_file<'a>(client: &Client, url: &str) -> anyhow::Result<Dow
     let mut stream = res.bytes_stream();
 
     // let downloaded_bytes = bytes::BytesMut::new();
-    let mut curr_percentage = 0.0;
+    let mut curr_percentage = 0.0_f32;
     while let Some(item) = stream.next().await {
         let chunk = item.map_err(|e| anyhow!("Error while downloading file: {e}"))?;
         download_resp.bytes.extend(&chunk);
         downloaded = min(downloaded + (chunk.len() as u64), total_size);
-        curr_percentage = (downloaded as f64 / total_size as f64) * 100.0;
-        if curr_percentage % 10.0 == 0.0 || curr_percentage % 5.0 == 0.0 {
+        let prev_percentage = curr_percentage.round();
+        curr_percentage = (downloaded as f32 / total_size as f32) * 100.0;
+        if curr_percentage.round() > prev_percentage || prev_percentage == 0.0 {
             info!(
                 "downloaded {:.2}%",
-                curr_percentage
+                curr_percentage.round()
             );
-
         }
     }
     Ok(download_resp)
