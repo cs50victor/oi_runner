@@ -196,7 +196,8 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
 
     let system_temp_dir = Command::new(SHELL).args(["-c", "echo $TMPDIR"]).output()?;
     let system_temp_dir = PathBuf::from(std::str::from_utf8(&system_temp_dir.stdout)?.trim());
-    let rye_installer_path = system_temp_dir.join(".ryeinstall.oi");
+    let rye_installer_path = system_temp_dir.join(".ryeinstaller.oi");
+    info!("rye_installer_path | {rye_installer_path:?}");
 
     // std::fs::set_permissions(rye_installer_path, );
 
