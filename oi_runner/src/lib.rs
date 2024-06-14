@@ -6,7 +6,7 @@ use std::{
     process::{Command, Output, Stdio},
 };
 
-use anyhow::bail;
+use anyhow::{anyhow, bail};
 use futures_lite::StreamExt as _;
 use log::info;
 use reqwest::Client;
@@ -99,22 +99,28 @@ impl Runner {
     }
 }
 
+pub fn get_python_bin_name() -> anyhow::Result<String>{
+    for potential_name in ["python3.11", "python3" , "python", "py"] {
+        let o = Command::new(SHELL)
+            .args(["-c", &format!("{potential_name} --version")])
+            .output()?;
+        if std::str::from_utf8(&o.stdout)?
+            .trim()
+            .to_lowercase()
+            .contains(VALID_PYTHON_VERSION) {
+                let py_bin_name = potential_name.to_owned();
+                info!("python bin name | {py_bin_name}");
+                return Ok(py_bin_name)
+        }
+    }
+    bail!("no valid python version found");
+}
 pub async fn get_runner(http_client: &Client) -> anyhow::Result<Runner> {
     if bin_exists("rye")? {
         info!("rye exists, using rye as runner");
         return Ok(Runner::Rye);
     }
-    let valid_python_version_exists = ["python3.11", "python3" , "python", "py"].iter().any(|p| {
-        let o = Command::new(SHELL)
-            .args(["-c", &format!("{p} --version")])
-            .output()
-            .unwrap();
-        std::str::from_utf8(&o.stdout)
-            .unwrap()
-            .trim()
-            .to_lowercase()
-            .contains(VALID_PYTHON_VERSION)
-    });
+    let valid_python_version_exists = get_python_bin_name().is_ok();
 
     if valid_python_version_exists {
         info!("a valid python version exists");
@@ -186,7 +192,7 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     let rye_gz_url =
         &format!("https://github.com/astral-sh/rye/releases/latest/download/{rye_file_name}.gz");
     info!("downloading rye installer {rye_gz_url:?}");
-    let rye_gz = download_file(client, rye_gz_url).await.unwrap();
+    let rye_gz = download_file(client, rye_gz_url).await?;
 
     let system_temp_dir = Command::new(SHELL).args(["-c", "echo $TMPDIR"]).output()?;
     let system_temp_dir = PathBuf::from(std::str::from_utf8(&system_temp_dir.stdout)?.trim());
@@ -245,7 +251,7 @@ pub struct DownloadResult {
     bytes: bytes::BytesMut,
 }
 
-pub async fn download_file<'a>(client: &Client, url: &str) -> Result<DownloadResult, String> {
+pub async fn download_file<'a>(client: &Client, url: &str) -> anyhow::Result<DownloadResult> {
     let mut downloaded = 0_u64;
 
     let mut download_resp = DownloadResult::default();
@@ -254,10 +260,10 @@ pub async fn download_file<'a>(client: &Client, url: &str) -> Result<DownloadRes
         .get(url)
         .send()
         .await
-        .or(Err(format!("Failed to GET from '{}'", &url)))?;
+        .map_err(|e| anyhow!("Failed to GET from '{}': {e}", &url))?;
     let total_size = res
         .content_length()
-        .ok_or(format!("Failed to get content length from '{}'", &url))?;
+        .ok_or_else(|| anyhow!("Failed to get content length from '{}'", &url))?;
 
     if downloaded >= total_size {
         info!("File already completed downloaded.");
@@ -269,7 +275,7 @@ pub async fn download_file<'a>(client: &Client, url: &str) -> Result<DownloadRes
     // let downloaded_bytes = bytes::BytesMut::new();
     let mut curr_percentage = 0.0;
     while let Some(item) = stream.next().await {
-        let chunk = item.or(Err("Error while downloading file".to_string()))?;
+        let chunk = item.map_err(|e| anyhow!("Error while downloading file: {e}"))?;
         download_resp.bytes.extend(&chunk);
         downloaded = min(downloaded + (chunk.len() as u64), total_size);
         curr_percentage = (downloaded as f64 / total_size as f64) * 100.0;
