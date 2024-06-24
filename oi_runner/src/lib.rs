@@ -9,7 +9,7 @@ use std::{
 
 use anyhow::{anyhow, bail, Context};
 use futures_lite::StreamExt as _;
-use log::info;
+use log::{debug, error, info};
 use reqwest::Client;
 
 const VALID_PYTHON_VERSION: &str = "3.11";
@@ -28,11 +28,17 @@ pub enum Runner {
 }
 
 pub fn output_to_string(output: &Output) -> anyhow::Result<String> {
+    let e = std::str::from_utf8(&output.stderr)?;
+    if !e.is_empty() && !output.status.success() { 
+        debug!("output status {}", output.status);
+        error!("{}", e);
+        bail!("{}", e)
+    }
     Ok(format!(
         "( status {:?} | stderr {} | stdout {}",
         output.status,
-        std::str::from_utf8(&output.stderr)?,
-        std::str::from_utf8(&output.stdout)?
+        std::str::from_utf8(&output.stdout)?,
+        e
     ))
 }
 impl Runner {
