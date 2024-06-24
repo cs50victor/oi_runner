@@ -1,0 +1,82 @@
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+concurrency:
+  # Allow only one workflow per any non-`main` branch.
+  group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.ref_name == 'main' && github.sha || 'anysha' }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - name: linux
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+
+          - name: windows
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+
+          - name: macOS (intel)
+            os: macos-12
+            target: x86_64-apple-darwin
+
+          - name: macOS (arm)
+            os: macos-latest
+            target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+
+    - name: checkout repo
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: nightly
+          profile: minimal
+          target: ${{ matrix.target }}
+          override: true
+
+    - name: Check Basics
+      uses: actions-rs/cargo@v1
+      with:
+        command: check
+        args: --target ${{ matrix.target }}
+
+    - name: Test Full Example ( Python Not Installed )
+      uses: actions-rs/cargo@v1
+      with:
+        command: run
+
+  fmt:
+    name: Format
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout repo
+        uses: actions/checkout@v4
+
+      - name: install rust
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: nightly
+          override: true
+          components: rustfmt
+
+      - name: run rustfmt
+        run: |
+          cargo fmt -- --check

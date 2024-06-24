@@ -2,7 +2,7 @@ use std::{
     cmp::min, env::var_os, fs::{remove_dir_all, File}, io::Write as _, path::PathBuf, process::{Command, Output, Stdio}
 };
 
-use anyhow::{anyhow, bail};
+use anyhow::{anyhow, bail, Context};
 use futures_lite::StreamExt as _;
 use log::info;
 use reqwest::Client;
@@ -34,6 +34,7 @@ pub fn output_to_string(output: &Output) -> anyhow::Result<String>{
 }
 impl Runner {
     pub fn create_venv(&self, desired_venv_path: PathBuf) -> anyhow::Result<()> {
+        info!("venv path : {desired_venv_path:?}");
         if desired_venv_path.exists() {
             remove_dir_all(&desired_venv_path)?;
         }
@@ -42,9 +43,9 @@ impl Runner {
             None => bail!("failed to find parent dir to {desired_venv_path:?}"),
         };
         let o = match self {
-            Runner::PythonAndUv => Command::new("uv").args(["venv", "-p", VALID_PYTHON_VERSION, (desired_venv_path.to_str().unwrap())]).output()?,
+            Runner::PythonAndUv => Command::new("uv").args(["venv", "-p", VALID_PYTHON_VERSION, (desired_venv_path.to_str().unwrap())]).output().context("failed to create venv using uv")?,
             // ensure a "pyproject.toml" file exists in this directory
-            Runner::Rye => Command::new(SHELL).args(["-c", &format!("cd {parent_dir:?} && rye sync")]).output()?,
+            Runner::Rye => Command::new(SHELL).args(["-c", &format!("cd {parent_dir:?} && rye sync")]).output().context("failed to create venv using rye")?,
         };
 
         info!("python virtual environment creation result | {}", output_to_string(&o)?);
@@ -68,6 +69,7 @@ impl Runner {
     }
     
     pub fn install_pip_packages(&self, venv_path: PathBuf, requirements_file_path: PathBuf) -> anyhow::Result<()>{
+        info!("requirements file_path : {requirements_file_path:?}");
         match self {
             // rye sync already handles package installation from pyproject.toml
             Runner::Rye => Ok(()),
