@@ -210,7 +210,7 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     };
 
     if bin_exists("gunzip")? && bin_exists("curl")? {
-        let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" sh"]).output()?;
+        let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" bash"]).output()?;
 
         info!("rye curl installer resp | {o:#?}");
 
