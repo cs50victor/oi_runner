@@ -62,7 +62,7 @@ impl Runner {
                 .output()
                 .context("failed to create venv using uv")?,
             // ensure a "pyproject.toml" file exists in this directory
-            Runner::Rye => Command::new(SHELL)
+            Runner::Rye => Command::new("bash")
                 .args(["-c", &format!("cd {parent_dir:?} && rye sync")])
                 .output()
                 .context("failed to create venv using rye")?,
@@ -210,6 +210,7 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     };
 
     if bin_exists("gunzip")? && bin_exists("curl")? {
+        // use bash to avoid pipefail error
         let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" bash"]).output()?;
 
         info!("rye curl installer resp | {o:#?}");
