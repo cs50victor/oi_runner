@@ -8,7 +8,7 @@ on:
 concurrency:
   # Allow only one workflow per any non-`main` branch.
   group: ${{ github.workflow }}-${{ github.ref_name }}-${{ github.ref_name == 'main' && github.sha || 'anysha' }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -16,8 +16,9 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build:
+  build_test:
     strategy:
+      fail-fast: false
       matrix:
         include:
           - name: linux
