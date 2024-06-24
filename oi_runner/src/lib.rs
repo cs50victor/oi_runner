@@ -29,7 +29,7 @@ pub enum Runner {
 
 pub fn output_to_string(output: &Output) -> anyhow::Result<String> {
     let e = std::str::from_utf8(&output.stderr)?;
-    if !e.is_empty() && !output.status.success() { 
+    if !e.is_empty() && !output.status.success() {
         debug!("output status {}", output.status);
         error!("{}", e);
         bail!("{}", e)
