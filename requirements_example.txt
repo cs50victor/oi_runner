@@ -1,22 +1,2 @@
 fastapi==0.110.2
 uvicorn==0.27.0
-open-interpreter @ git+https://github.com/openInterpreter/open-interpreter.git
-RealTimeSTT==0.1.12
-RealTimeTTS==0.3.44
-
-opencv-python==4.9.0.80
-PyAutoGUI==0.9.54
-matplotlib==3.8.4
-pydantic==2.7.1
-litellm==1.35.35
-openai==1.13.3
-elevenlabs==0.2.27
-
-ipython==8.12.3
-pytesseract==0.3.10
-setuptools==69.5.1
-typing_extensions==4.11.0
-groq==0.5.0
-pywebview==5.1
-pip==24.0
-pyarmor==8.5.9
