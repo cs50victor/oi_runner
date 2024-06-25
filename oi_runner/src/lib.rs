@@ -83,7 +83,7 @@ impl Runner {
                                 .args([
                                     "-c",
                                     &format!(
-                                        "source ${home}/.rye/env && cd {parent_dir:?} && rye sync"
+                                        "source {home}/.rye/env && cd {parent_dir:?} && rye sync"
                                     ),
                                 ])
                                 .output()?,
@@ -95,9 +95,7 @@ impl Runner {
                                 Command::new(SHELL)
                                     .args([
                                         "-c",
-                                        &format!(
-                                            "cd {parent_dir:?} && ${home}/.rye/shims/rye sync"
-                                        ),
+                                        &format!("cd {parent_dir:?} && {home}/.rye/shims/rye sync"),
                                     ])
                                     .output()
                                     .context(
