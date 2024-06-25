@@ -71,9 +71,12 @@ impl Runner {
                         info!("home path | {home_path:?}");
                         let home = home_path.to_string_lossy().to_string();
                         info!("sourcing rye's env");
-                        if c.args(["-c", &format!("source ${home}/.rye/env")])
-                            .output()
-                            .is_err()
+                        if c.args([
+                            "-c",
+                            &format!("source ${home}/.rye/env && cd {parent_dir:?} && rye sync"),
+                        ])
+                        .output()
+                        .is_err()
                         {
                             info!("using direct link to rye shim");
                             c.args([
@@ -83,11 +86,14 @@ impl Runner {
                             .output()
                             .context("Failed to create venv using direct link to rye shim")?
                         } else {
-                            c.args(["-c", &format!("cd {parent_dir:?} && rye sync")])
+                            // TODO: remove later
+                            info!("brute force rye bin name ");
+                            Command::new(SHELL).args(["-c", &format!("cd {parent_dir:?} && rye sync")])
                                 .output()
                                 .context("failed to create venv using rye even when sourcing rye's env was successful")?
                         }
                     } else {
+                        // TODO: remove later
                         Command::new(SHELL)
                             .args(["-c", &format!("cd {parent_dir:?} && rye sync")])
                             .output()
