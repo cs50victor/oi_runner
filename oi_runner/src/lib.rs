@@ -59,6 +59,9 @@ impl Runner {
             Some(dir) => dir,
             None => bail!("failed to find parent dir to {desired_venv_path:?}"),
         };
+        
+        info!("venv parent dir | {parent_dir:?} | exists {}", parent_dir.exists()); 
+
         let o = match self {
             Runner::PythonAndUv => Command::new("uv")
                 .args([
