@@ -65,26 +65,29 @@ impl Runner {
             Runner::Rye => {
                 if !bin_exists("rye")? {
                     info!("rye not found in path, trying to create venv using other methods");
-                    let mut c = Command::new(SHELL);
                     // try source \"$HOME/.rye/env
                     if let Some(home_path) = std::env::var_os("HOME") {
                         info!("home path | {home_path:?}");
                         let home = home_path.to_string_lossy().to_string();
                         info!("sourcing rye's env");
-                        if c.args([
-                            "-c",
-                            &format!("source ${home}/.rye/env && cd {parent_dir:?} && rye sync"),
-                        ])
-                        .output()
-                        .is_err()
-                        {
-                            info!("using direct link to rye shim");
-                            c.args([
+                        if let Err(e) = Command::new(SHELL)
+                            .args([
                                 "-c",
-                                &format!("cd {parent_dir:?} && ${home}/.rye/shims/rye sync"),
+                                &format!(
+                                    "source ${home}/.rye/env && cd {parent_dir:?} && rye sync"
+                                ),
                             ])
                             .output()
-                            .context("Failed to create venv using direct link to rye shim")?
+                        {
+                            error!("failed to source rye's env | {e}");
+                            info!("using direct link to rye shim");
+                            Command::new(SHELL)
+                                .args([
+                                    "-c",
+                                    &format!("cd {parent_dir:?} && ${home}/.rye/shims/rye sync"),
+                                ])
+                                .output()
+                                .context("Failed to create venv using direct link to rye shim")?
                         } else {
                             // TODO: remove later
                             info!("brute force rye bin name ");
