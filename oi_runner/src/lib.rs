@@ -70,7 +70,7 @@ impl Runner {
                         info!("home path | {home_path:?}");
                         let home = home_path.to_string_lossy().to_string();
                         info!("sourcing rye's env");
-                        if let Err(e) = Command::new(SHELL)
+                        match Command::new(SHELL)
                             .args([
                                 "-c",
                                 &format!(
@@ -79,21 +79,22 @@ impl Runner {
                             ])
                             .output()
                         {
-                            error!("failed to source rye's env | {e}");
-                            info!("using direct link to rye shim");
-                            Command::new(SHELL)
-                                .args([
-                                    "-c",
-                                    &format!("cd {parent_dir:?} && ${home}/.rye/shims/rye sync"),
-                                ])
-                                .output()
-                                .context("Failed to create venv using direct link to rye shim")?
-                        } else {
-                            // TODO: remove later
-                            info!("brute force rye bin name ");
-                            Command::new(SHELL).args(["-c", &format!("cd {parent_dir:?} && rye sync")])
-                                .output()
-                                .context("failed to create venv using rye even when sourcing rye's env was successful")?
+                            Ok(o) => o,
+                            Err(e) => {
+                                error!("failed to source rye's env | {e}");
+                                info!("using direct link to rye shim");
+                                Command::new(SHELL)
+                                    .args([
+                                        "-c",
+                                        &format!(
+                                            "cd {parent_dir:?} && ${home}/.rye/shims/rye sync"
+                                        ),
+                                    ])
+                                    .output()
+                                    .context(
+                                        "Failed to create venv using direct link to rye shim",
+                                    )?
+                            }
                         }
                     } else {
                         // TODO: remove later
