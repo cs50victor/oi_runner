@@ -146,9 +146,9 @@ impl Runner {
     pub fn install_pip_packages(
         &self,
         venv_path: PathBuf,
-        requirements_file_path: PathBuf,
+        pyproject_toml_path: PathBuf,
     ) -> anyhow::Result<()> {
-        info!("requirements file_path : {requirements_file_path:?}");
+        info!("pyproject file_path : {pyproject_toml_path:?}");
         match self {
             // rye sync already handles package installation from pyproject.toml
             Runner::Rye => Ok(()),
@@ -157,11 +157,11 @@ impl Runner {
 
                 #[cfg(unix)]
                 let source_and_pip_install_cmd =
-                    &format!("source {source_cmd} && uv pip install -r {requirements_file_path:?}");
+                    &format!("source {source_cmd} && uv pip install -r {pyproject_toml_path:?}");
 
                 #[cfg(windows)]
                 let source_and_pip_install_cmd =
-                    &format!("{source_cmd} && uv pip install -r {requirements_file_path:?}");
+                    &format!("{source_cmd} && uv pip install -r {pyproject_toml_path:?}");
 
                 #[cfg(unix)]
                 let o = Command::new(SHELL)

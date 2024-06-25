@@ -10,9 +10,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     oi_runner.create_venv(venv_path.clone())?;
 
-    let requirements_file_path = std::env::current_dir()?.join("requirements_example.txt");
+    let pyproject_file_path = std::env::current_dir()?.join("pyproject.toml");
 
-    oi_runner.install_pip_packages(venv_path, requirements_file_path)?;
+    oi_runner.install_pip_packages(venv_path, pyproject_file_path)?;
     log::info!("DONE");
     Ok(())
 }
