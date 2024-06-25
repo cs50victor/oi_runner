@@ -41,6 +41,14 @@ pub fn output_to_string(output: &Output) -> anyhow::Result<String> {
         e
     ))
 }
+
+pub fn extract_real_output(output: Output) -> anyhow::Result<Output> {
+    let e = std::str::from_utf8(&output.stderr)?;
+    if !e.is_empty() && !output.status.success() {
+        bail!("{e}")
+    }
+    Ok(output)
+}
 impl Runner {
     pub fn create_venv(&self, desired_venv_path: PathBuf) -> anyhow::Result<()> {
         info!("venv path : {desired_venv_path:?}");
@@ -70,15 +78,16 @@ impl Runner {
                         info!("home path | {home_path:?}");
                         let home = home_path.to_string_lossy().to_string();
                         info!("sourcing rye's env");
-                        match Command::new(SHELL)
-                            .args([
-                                "-c",
-                                &format!(
-                                    "source ${home}/.rye/env && cd {parent_dir:?} && rye sync"
-                                ),
-                            ])
-                            .output()
-                        {
+                        match extract_real_output(
+                            Command::new(SHELL)
+                                .args([
+                                    "-c",
+                                    &format!(
+                                        "source ${home}/.rye/env && cd {parent_dir:?} && rye sync"
+                                    ),
+                                ])
+                                .output()?,
+                        ) {
                             Ok(o) => o,
                             Err(e) => {
                                 error!("failed to source rye's env | {e}");
