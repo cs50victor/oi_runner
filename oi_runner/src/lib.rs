@@ -64,17 +64,37 @@ impl Runner {
             // ensure a "pyproject.toml" file exists in this directory
             Runner::Rye => {
                 if !bin_exists("rye")? {
+                    info!("rye not found in path, trying to create venv using other methods");
                     let mut c = Command::new(SHELL);
                     // try source \"$HOME/.rye/env
                     if let Some(home_path) = std::env::var_os("HOME") {
+                        info!("home path | {home_path:?}");
                         let home = home_path.to_string_lossy().to_string();
-                        c.args(["-c", &format!("source ${home}/.rye/env")])
-                            .output()?;
-                    };
-                    c.args(["-c", &format!("cd {parent_dir:?} && rye sync")])
-                        .output()
-                        .context("failed to create venv using rye")?
+                        info!("sourcing rye's env");
+                        if c.args(["-c", &format!("source ${home}/.rye/env")])
+                            .output()
+                            .is_err()
+                        {
+                            info!("using direct link to rye shim");
+                            c.args([
+                                "-c",
+                                &format!("cd {parent_dir:?} && ${home}/.rye/shims/rye sync"),
+                            ])
+                            .output()
+                            .context("Failed to create venv using direct link to rye shim")?
+                        } else {
+                            c.args(["-c", &format!("cd {parent_dir:?} && rye sync")])
+                                .output()
+                                .context("failed to create venv using rye even when sourcing rye's env was successful")?
+                        }
+                    } else {
+                        Command::new(SHELL)
+                            .args(["-c", &format!("cd {parent_dir:?} && rye sync")])
+                            .output()
+                            .context("failed to create venv forcefully using rye")?
+                    }
                 } else {
+                    info!("rye found in path, creating venv using rye");
                     Command::new(SHELL)
                         .args(["-c", &format!("cd {parent_dir:?} && rye sync")])
                         .output()
