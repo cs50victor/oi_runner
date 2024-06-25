@@ -65,7 +65,7 @@ impl Runner {
                     "venv",
                     "-p",
                     VALID_PYTHON_VERSION,
-                    (desired_venv_path.to_str().unwrap()),
+                    desired_venv_path.to_string_lossy().as_ref(), 
                 ])
                 .output()
                 .context("failed to create venv using uv")?,
