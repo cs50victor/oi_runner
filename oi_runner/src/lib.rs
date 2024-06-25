@@ -62,10 +62,25 @@ impl Runner {
                 .output()
                 .context("failed to create venv using uv")?,
             // ensure a "pyproject.toml" file exists in this directory
-            Runner::Rye => Command::new("bash")
-                .args(["-c", &format!("cd {parent_dir:?} && rye sync")])
-                .output()
-                .context("failed to create venv using rye")?,
+            Runner::Rye => {
+                if !bin_exists("rye")? {
+                    let mut c = Command::new(SHELL);
+                    // try source \"$HOME/.rye/env
+                    if let Some(home_path) = std::env::var_os("HOME") {
+                        let home = home_path.to_string_lossy().to_string();
+                        c.args(["-c", &format!("source ${home}/.rye/env")])
+                            .output()?;
+                    };
+                    c.args(["-c", &format!("cd {parent_dir:?} && rye sync")])
+                        .output()
+                        .context("failed to create venv using rye")?
+                } else {
+                    Command::new(SHELL)
+                        .args(["-c", &format!("cd {parent_dir:?} && rye sync")])
+                        .output()
+                        .context("failed to create venv using rye")?
+                }
+            }
         };
 
         info!(
