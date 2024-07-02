@@ -211,7 +211,7 @@ pub async fn get_runner(http_client: &Client, force_rye: bool) -> anyhow::Result
     }
     if !force_rye {
         let valid_python_version_exists = get_python_bin_name().is_ok();
-    
+
         if valid_python_version_exists {
             info!("a valid python version exists");
             let uv_exists = bin_exists("uv")?;
