@@ -204,21 +204,23 @@ pub fn get_python_bin_name() -> anyhow::Result<String> {
     }
     bail!("no valid python version found");
 }
-pub async fn get_runner(http_client: &Client) -> anyhow::Result<Runner> {
+pub async fn get_runner(http_client: &Client, force_rye: bool) -> anyhow::Result<Runner> {
     if bin_exists("rye")? {
         info!("rye exists, using rye as runner");
         return Ok(Runner::Rye);
     }
-    let valid_python_version_exists = get_python_bin_name().is_ok();
-
-    if valid_python_version_exists {
-        info!("a valid python version exists");
-        let uv_exists = bin_exists("uv")?;
-        if uv_exists || download_uv().await.is_ok() {
-            return Ok(Runner::PythonAndUv);
+    if !force_rye {
+        let valid_python_version_exists = get_python_bin_name().is_ok();
+    
+        if valid_python_version_exists {
+            info!("a valid python version exists");
+            let uv_exists = bin_exists("uv")?;
+            if uv_exists || download_uv().await.is_ok() {
+                return Ok(Runner::PythonAndUv);
+            }
         }
+        info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
     }
-    info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
 
     info!("installing rye");
     // successfully download rye, and check it exists on user's system
