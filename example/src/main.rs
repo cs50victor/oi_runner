@@ -3,7 +3,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     pretty_env_logger::formatted_builder()
         .parse_filters("oi_runner=debug,example=debug")
         .init();
-    let oi_runner = oi_runner::get_runner(&reqwest::Client::new()).await?;
+    let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), false).await?;
     log::info!("runner : {oi_runner:?}");
 
     let venv_path = std::env::current_dir()?.join(".venv");
