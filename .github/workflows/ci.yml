@@ -16,7 +16,34 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build_test:
+    code-check:
+    name: Code Check
+      runs-on: ubuntu-latest
+      steps:
+        - name: checkout repo
+          uses: actions/checkout@v4
+
+        - name: Setup Rust
+          uses: actions-rs/toolchain@v1
+          with:
+              toolchain: nightly
+              profile: minimal
+              override: true
+              components: rustfmt, clippy
+
+        - name: Check Basics
+          uses: actions-rs/cargo@v1
+          with:
+            command: check
+            args: --all-targets
+
+        - name: run rustfmt
+        run: cargo fmt -- --check 
+
+
+  run_tests:
+    name: Run Tests
+    needs: code-check
     strategy:
       fail-fast: false
       matrix:
@@ -63,21 +90,4 @@ jobs:
       with:
         command: run
 
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
-      - name: checkout repo
-        uses: actions/checkout@v4
-
-      - name: install rust
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-          components: rustfmt
-
-      - name: run rustfmt
-        run: |
-          cargo fmt -- --check
+  

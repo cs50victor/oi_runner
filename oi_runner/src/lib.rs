@@ -59,6 +59,7 @@ impl Runner {
         if desired_venv_path.exists() {
             remove_dir_all(&desired_venv_path)?;
         }
+        
         let parent_dir = match desired_venv_path.parent() {
             Some(dir) => dir,
             None => bail!("failed to find parent dir to {desired_venv_path:?}"),
@@ -69,6 +70,8 @@ impl Runner {
             parent_dir.exists()
         );
 
+        let parent_dir = format!("'{}'", parent_dir.to_string_lossy().to_string());
+        
         let ulimit_cmd = if increase_ulimit {
             "ulimit -n 4096 && "
         } else {
@@ -80,7 +83,7 @@ impl Runner {
                 .args([
                     "-c",
                     &format!(
-                        "{ulimit_cmd} uv venv -p {VALID_PYTHON_VERSION} {}",
+                        "{ulimit_cmd} uv venv -p {VALID_PYTHON_VERSION} '{}'",
                         desired_venv_path.to_string_lossy().as_ref()
                     ),
                 ])
@@ -100,7 +103,7 @@ impl Runner {
                                 .args([
                                     "-c",
                                     &format!(
-                                        "source {home}/.rye/env && cd {parent_dir:?} && {ulimit_cmd} rye sync"
+                                        "source {home}/.rye/env && cd {parent_dir} && {ulimit_cmd} rye sync"
                                     ),
                                 ])
                                 .output()?,
@@ -112,7 +115,7 @@ impl Runner {
                                 Command::new(SHELL)
                                     .args([
                                         "-c",
-                                        &format!("cd {parent_dir:?} && {ulimit_cmd} {home}/.rye/shims/rye sync"),
+                                        &format!("cd {parent_dir} && {ulimit_cmd} {home}/.rye/shims/rye sync"),
                                     ])
                                     .output()
                                     .context(
@@ -123,14 +126,14 @@ impl Runner {
                     } else {
                         // TODO: remove later
                         Command::new(SHELL)
-                            .args(["-c", &format!("cd {parent_dir:?} && {ulimit_cmd} rye sync")])
+                            .args(["-c", &format!("cd {parent_dir} && {ulimit_cmd} rye sync")])
                             .output()
                             .context("failed to create venv forcefully using rye")?
                     }
                 } else {
                     info!("rye found in path, creating venv using rye");
                     Command::new(SHELL)
-                        .args(["-c", &format!("cd {parent_dir:?} && {ulimit_cmd} rye sync")])
+                        .args(["-c", &format!("cd {parent_dir} && {ulimit_cmd} rye sync")])
                         .output()
                         .context("failed to create venv using rye")?
                 }
@@ -148,16 +151,13 @@ impl Runner {
         Ok(())
     }
 
-    pub fn get_source_cmd(&self, venv_path: PathBuf) -> anyhow::Result<String> {
+    pub fn get_source_cmd(&self, venv_path: PathBuf) -> String {
         #[cfg(windows)]
         let venv_path_str = venv_path.join("Scripts\\activate");
         #[cfg(unix)]
         let venv_path_str = venv_path.join("bin/activate");
 
-        match venv_path_str.to_str() {
-            Some(p) => Ok(p.to_owned()),
-            None => bail!("couldn't create venv path"),
-        }
+        format!("'{}'", venv_path_str.to_string_lossy())
     }
 
     pub fn install_pip_packages(
@@ -166,7 +166,9 @@ impl Runner {
         pyproject_toml_path: PathBuf,
         increase_ulimit: bool,
     ) -> anyhow::Result<()> {
-        info!("pyproject file_path : {pyproject_toml_path:?}");
+        let pyproject_toml_path = format!("'{}'", pyproject_toml_path.to_string_lossy());
+        
+        info!("pyproject file_path : {pyproject_toml_path}");
 
         let ulimit_cmd = if increase_ulimit {
             "ulimit -n 4096 && "
@@ -178,16 +180,16 @@ impl Runner {
             // rye sync already handles package installation from pyproject.toml
             Runner::Rye => Ok(()),
             Runner::PythonAndUv => {
-                let source_cmd = self.get_source_cmd(venv_path)?;
+                let source_cmd = self.get_source_cmd(venv_path);
 
                 #[cfg(unix)]
                 let source_and_pip_install_cmd = &format!(
-                    "source {source_cmd} && {ulimit_cmd} uv pip install -r {pyproject_toml_path:?}"
+                    "source {source_cmd} && {ulimit_cmd} uv pip install -r {pyproject_toml_path}"
                 );
 
                 #[cfg(windows)]
                 let source_and_pip_install_cmd = &format!(
-                    "{source_cmd} && {ulimit_cmd} uv pip install -r {pyproject_toml_path:?}"
+                    "{source_cmd} && {ulimit_cmd} uv pip install -r {pyproject_toml_path}"
                 );
 
                 #[cfg(unix)]
