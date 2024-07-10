@@ -21,7 +21,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if use_path_name_with_spaces {
         base_path = base_path.join("dir with spaces");
-        std::fs::create_dir_all(&base_path)?;
     }
 
     let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), false).await?;

@@ -72,6 +72,8 @@ impl Runner {
 
         let parent_dir = format!("'{}'", parent_dir.to_string_lossy());
 
+        info!("parent dir | {parent_dir}");
+
         let ulimit_cmd = if increase_ulimit {
             "ulimit -n 4096 && "
         } else {
@@ -103,7 +105,7 @@ impl Runner {
                                 .args([
                                     "-c",
                                     &format!(
-                                        "source {home}/.rye/env && cd {parent_dir} && {ulimit_cmd} rye sync"
+                                        "source '{home}/.rye/env' && cd {parent_dir} && {ulimit_cmd} rye sync"
                                     ),
                                 ])
                                 .output()?,

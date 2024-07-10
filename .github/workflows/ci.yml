@@ -80,13 +80,9 @@ jobs:
             override: true
 
       - name: Test Full Example 
-        uses: actions-rs/cargo@v1
-        with:
-          command: run
+        run: cargo run
       
       - name: Test Full Example
-        uses: actions-rs/cargo@v1
-        with:
-          command: run -- true
-  
-    
+        run: cargo run -- true
+
+        
