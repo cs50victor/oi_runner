@@ -79,10 +79,10 @@ jobs:
             target: ${{ matrix.target }}
             override: true
 
-      - name: Test Full Example 
+      - name: Test Full Example 1
         run: cargo run
       
-      - name: Test Full Example
+      - name: Test Full Example 2
         run: cargo run -- true
 
         
