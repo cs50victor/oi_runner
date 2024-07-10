@@ -59,7 +59,7 @@ impl Runner {
         if desired_venv_path.exists() {
             remove_dir_all(&desired_venv_path)?;
         }
-        
+
         let parent_dir = match desired_venv_path.parent() {
             Some(dir) => dir,
             None => bail!("failed to find parent dir to {desired_venv_path:?}"),
@@ -71,7 +71,7 @@ impl Runner {
         );
 
         let parent_dir = format!("'{}'", parent_dir.to_string_lossy().to_string());
-        
+
         let ulimit_cmd = if increase_ulimit {
             "ulimit -n 4096 && "
         } else {
@@ -167,7 +167,7 @@ impl Runner {
         increase_ulimit: bool,
     ) -> anyhow::Result<()> {
         let pyproject_toml_path = format!("'{}'", pyproject_toml_path.to_string_lossy());
-        
+
         info!("pyproject file_path : {pyproject_toml_path}");
 
         let ulimit_cmd = if increase_ulimit {
