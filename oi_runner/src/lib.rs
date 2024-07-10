@@ -70,7 +70,7 @@ impl Runner {
             parent_dir.exists()
         );
 
-        let parent_dir = format!("'{}'", parent_dir.to_string_lossy().to_string());
+        let parent_dir = format!("'{}'", parent_dir.to_string_lossy());
 
         let ulimit_cmd = if increase_ulimit {
             "ulimit -n 4096 && "

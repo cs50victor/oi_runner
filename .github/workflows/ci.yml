@@ -49,6 +49,7 @@ jobs:
           include:
             - name: linux
               os: ubuntu-latest
+              
               target: x86_64-unknown-linux-gnu
   
             # - name: windows
@@ -56,11 +57,11 @@ jobs:
             #   target: x86_64-pc-windows-msvc
   
             - name: macOS (intel)
-              os: macos-12
+              os: macos-12 
               target: x86_64-apple-darwin
   
             - name: macOS (arm)
-              os: macos-latest
+              os: macos-latest 
               target: aarch64-apple-darwin
   
       runs-on: ${{ matrix.os }}
@@ -77,16 +78,15 @@ jobs:
             profile: minimal
             target: ${{ matrix.target }}
             override: true
-  
-      - name: Check Basics
-        uses: actions-rs/cargo@v1
-        with:
-          command: check
-          args: --target ${{ matrix.target }}
-  
-      - name: Test Full Example ( Python Not Installed )
+
+      - name: Test Full Example 
         uses: actions-rs/cargo@v1
         with:
           command: run
+      
+      - name: Test Full Example
+        uses: actions-rs/cargo@v1
+        with:
+          command: run -- true
   
     
