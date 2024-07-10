@@ -16,68 +16,73 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
-  build_test:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: linux
-            os: ubuntu-latest
-            target: x86_64-unknown-linux-gnu
+    code-check:
+      name: Code Check
+      runs-on: ubuntu-latest
+      steps:
+        - name: checkout repo
+          uses: actions/checkout@v4
 
-          # - name: windows
-          #   os: windows-latest
-          #   target: x86_64-pc-windows-msvc
+        - name: Setup Rust
+          uses: actions-rs/toolchain@v1
+          with:
+              toolchain: nightly
+              profile: minimal
+              override: true
+              components: rustfmt, clippy
 
-          - name: macOS (intel)
-            os: macos-12
-            target: x86_64-apple-darwin
+        - name: Check Basics
+          uses: actions-rs/cargo@v1
+          with:
+            command: check
+            args: --all-targets
 
-          - name: macOS (arm)
-            os: macos-latest
-            target: aarch64-apple-darwin
-
-    runs-on: ${{ matrix.os }}
-
-    steps:
-
-    - name: checkout repo
-      uses: actions/checkout@v4
-
-    - name: Setup Rust
-      uses: actions-rs/toolchain@v1
-      with:
-          toolchain: nightly
-          profile: minimal
-          target: ${{ matrix.target }}
-          override: true
-
-    - name: Check Basics
-      uses: actions-rs/cargo@v1
-      with:
-        command: check
-        args: --target ${{ matrix.target }}
-
-    - name: Test Full Example ( Python Not Installed )
-      uses: actions-rs/cargo@v1
-      with:
-        command: run
-
-  fmt:
-    name: Format
-    runs-on: ubuntu-latest
-    steps:
+        - name: run rustfmt
+          run: cargo fmt -- --check 
+          
+    examples:
+      name: Run Tests
+      needs: code-check
+      strategy:
+        fail-fast: false
+        matrix:
+          include:
+            - name: linux
+              os: ubuntu-latest
+              
+              target: x86_64-unknown-linux-gnu
+  
+            # - name: windows
+            #   os: windows-latest
+            #   target: x86_64-pc-windows-msvc
+  
+            - name: macOS (intel)
+              os: macos-12 
+              target: x86_64-apple-darwin
+  
+            - name: macOS (arm)
+              os: macos-latest 
+              target: aarch64-apple-darwin
+  
+      runs-on: ${{ matrix.os }}
+  
+      steps:
+  
       - name: checkout repo
         uses: actions/checkout@v4
-
-      - name: install rust
+  
+      - name: Setup Rust
         uses: actions-rs/toolchain@v1
         with:
-          profile: minimal
-          toolchain: nightly
-          override: true
-          components: rustfmt
+            toolchain: nightly
+            profile: minimal
+            target: ${{ matrix.target }}
+            override: true
 
-      - name: run rustfmt
-        run: |
-          cargo fmt -- --check
+      - name: Test Full Example 1
+        run: cargo run
+      
+      - name: Test Full Example 2
+        run: cargo run -- true
+
+        
