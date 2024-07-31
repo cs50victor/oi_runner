@@ -137,8 +137,13 @@ impl Runner {
                     }
                 } else {
                     info!("rye found in path, creating venv using rye");
+                    let rye_bin_name = if custom_rye_dir_name.is_some() {
+                        dir_to_rye_bin(dir_name_to_home_dir(custom_rye_dir_name)?)
+                    } else {
+                        "rye".to_string()
+                    };
                     Command::new(SHELL)
-                        .args(["-c", &format!("cd {parent_dir} && {ulimit_cmd} rye sync")])
+                        .args(["-c", &format!("cd {parent_dir} && {ulimit_cmd} {} sync", rye_bin_name)])
                         .output()
                         .context("failed to create venv using rye")?
                 }
@@ -252,6 +257,7 @@ pub fn get_python_bin_name(mut custom_rye_dir_name: Option<&str>) -> anyhow::Res
     }
     bail!("no valid python version found");
 }
+
 pub async fn get_runner(
     http_client: &Client,
     force_rye: bool,
