@@ -12,7 +12,7 @@ use futures_lite::StreamExt as _;
 use log::{debug, error, info};
 use reqwest::Client;
 
-const VALID_PYTHON_VERSION: &str = "3.11";
+const VALID_PYTHON_VERSION: &str = "3.11.9";
 
 #[cfg(target_os = "macos")]
 const SHELL: &str = "zsh";
