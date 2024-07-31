@@ -24,13 +24,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     // !!!!!!!!!!!
     let custom_rye_dir_name = Some(".oi");
-    
+
     // let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), false, None).await?;
-    let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), true, custom_rye_dir_name).await?;
+    let oi_runner =
+        oi_runner::get_runner(&reqwest::Client::new(), true, custom_rye_dir_name).await?;
     log::info!("runner : {oi_runner:?}");
 
     if custom_rye_dir_name.is_some() {
-        let p = oi_runner::dir_to_rye_bin(oi_runner::dir_name_to_home_dir(custom_rye_dir_name).unwrap());
+        let p = oi_runner::dir_to_rye_bin(
+            oi_runner::dir_name_to_home_dir(custom_rye_dir_name).unwrap(),
+        );
         println!(">>> {p}");
         assert!(std::path::PathBuf::from(p).exists());
     }

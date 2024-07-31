@@ -4,7 +4,8 @@ use std::{
     fs::{remove_dir_all, File},
     io::Write as _,
     path::PathBuf,
-    process::{Command, Output, Stdio}, vec,
+    process::{Command, Output, Stdio},
+    vec,
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -54,7 +55,7 @@ impl Runner {
         &self,
         desired_venv_path: PathBuf,
         increase_ulimit: bool,
-        custom_rye_dir_name: Option<&str>
+        custom_rye_dir_name: Option<&str>,
     ) -> anyhow::Result<()> {
         info!("venv path : {desired_venv_path:?}");
         if desired_venv_path.exists() {
@@ -215,10 +216,18 @@ impl Runner {
 }
 
 pub fn get_python_bin_name(mut custom_rye_dir_name: Option<&str>) -> anyhow::Result<String> {
-    let mut py_dirs = vec!["python3.11".to_string(), "python3".to_string(), "python".to_string(), "py".to_string()];
+    let mut py_dirs = vec![
+        "python3.11".to_string(),
+        "python3".to_string(),
+        "python".to_string(),
+        "py".to_string(),
+    ];
 
     if custom_rye_dir_name.is_some() {
-        let rye_py_path = format!("{}/.rye/self/bin/python", dir_name_to_home_dir(custom_rye_dir_name.take())?);
+        let rye_py_path = format!(
+            "{}/.rye/self/bin/python",
+            dir_name_to_home_dir(custom_rye_dir_name.take())?
+        );
         py_dirs.insert(0, rye_py_path);
     };
 
@@ -230,10 +239,11 @@ pub fn get_python_bin_name(mut custom_rye_dir_name: Option<&str>) -> anyhow::Res
         if String::from_utf8_lossy(&o.stdout)
             .trim()
             .to_lowercase()
-            .contains(VALID_PYTHON_VERSION) || String::from_utf8_lossy(&o.stderr)
-            .trim()
-            .to_lowercase()
             .contains(VALID_PYTHON_VERSION)
+            || String::from_utf8_lossy(&o.stderr)
+                .trim()
+                .to_lowercase()
+                .contains(VALID_PYTHON_VERSION)
         {
             let py_bin_name = potential_name.to_owned();
             info!("python bin name | {py_bin_name}");
@@ -242,11 +252,14 @@ pub fn get_python_bin_name(mut custom_rye_dir_name: Option<&str>) -> anyhow::Res
     }
     bail!("no valid python version found");
 }
-pub async fn get_runner(http_client: &Client, force_rye: bool, custom_rye_dir_name: Option<&str>) -> anyhow::Result<Runner> {
-    
+pub async fn get_runner(
+    http_client: &Client,
+    force_rye: bool,
+    custom_rye_dir_name: Option<&str>,
+) -> anyhow::Result<Runner> {
     let rye_bin_name = if custom_rye_dir_name.is_some() {
         dir_to_rye_bin(dir_name_to_home_dir(custom_rye_dir_name)?)
-    }else{
+    } else {
         "rye".to_string()
     };
 
@@ -307,7 +320,10 @@ async fn download_uv() -> anyhow::Result<()> {
 // install rye without downloading additional dependencies
 // /usr/bin/gunzip
 // /usr/bin/curl
-pub async fn download_rye(client: &Client, custom_rye_dir_name: Option<&str>) -> anyhow::Result<()> {
+pub async fn download_rye(
+    client: &Client,
+    custom_rye_dir_name: Option<&str>,
+) -> anyhow::Result<()> {
     if cfg!(not(any(target_arch = "aarch64", target_arch = "x86_64"))) {
         if cfg!(not(any(target_os = "macos", target_os = "linux"))) {
             bail!("Unsupported operating system | Not macos or linux");
@@ -328,8 +344,7 @@ pub async fn download_rye(client: &Client, custom_rye_dir_name: Option<&str>) ->
 
         // dir_name_to_home_dir(home_dir)
         // dir_to_rye_bin(home_dir)
-        if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))?
-        {
+        if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))? {
             bail!("{}", String::from_utf8_lossy(&o.stderr));
         }
         return Ok(());
@@ -382,7 +397,7 @@ pub async fn download_rye(client: &Client, custom_rye_dir_name: Option<&str>) ->
     info!("installer output {installer:?}");
 
     // rye bin or default rye bin path
-    if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))?{
+    if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))? {
         bail!("{}", String::from_utf8_lossy(&installer.stderr));
     }
 
@@ -390,12 +405,12 @@ pub async fn download_rye(client: &Client, custom_rye_dir_name: Option<&str>) ->
 }
 
 pub fn dir_name_to_home_dir(custom_rye_dir_name: Option<&str>) -> anyhow::Result<String> {
-    let home = match std::env::var_os("HOME"){
+    let home = match std::env::var_os("HOME") {
         Some(h) => h,
         None => bail!("HOME env var not found"),
-    }; 
+    };
     let mut base_home = PathBuf::from(home);
-    
+
     if custom_rye_dir_name.is_some() {
         base_home = base_home.join(custom_rye_dir_name.unwrap());
     };
@@ -404,10 +419,7 @@ pub fn dir_name_to_home_dir(custom_rye_dir_name: Option<&str>) -> anyhow::Result
 }
 
 pub fn dir_to_rye_bin(path: String) -> String {
-    format!(
-        "{:?}/.rye/shims/rye",
-        path
-    ).replace("\"", "")
+    format!("{:?}/.rye/shims/rye", path).replace("\"", "")
 }
 
 /// Uncompress a Gz Encoded vector
