@@ -4,7 +4,7 @@ use std::{
     fs::{remove_dir_all, File},
     io::Write as _,
     path::PathBuf,
-    process::{Command, Output, Stdio},
+    process::{Command, Output, Stdio}, vec,
 };
 
 use anyhow::{anyhow, bail, Context};
@@ -28,7 +28,7 @@ pub enum Runner {
 }
 
 pub fn output_to_string(output: &Output) -> anyhow::Result<String> {
-    let e = std::str::from_utf8(&output.stderr)?;
+    let e = String::from_utf8_lossy(&output.stderr);
     if !e.is_empty() && !output.status.success() {
         debug!("output status {}", output.status);
         error!("{}", e);
@@ -37,13 +37,13 @@ pub fn output_to_string(output: &Output) -> anyhow::Result<String> {
     Ok(format!(
         "( status {:?} | stderr {} | stdout {}",
         output.status,
-        std::str::from_utf8(&output.stdout)?,
+        String::from_utf8_lossy(&output.stdout),
         e
     ))
 }
 
 pub fn extract_real_output(output: Output) -> anyhow::Result<Output> {
-    let e = std::str::from_utf8(&output.stderr)?;
+    let e = String::from_utf8_lossy(&output.stderr);
     if !e.is_empty() && !output.status.success() {
         bail!("{e}")
     }
@@ -54,6 +54,7 @@ impl Runner {
         &self,
         desired_venv_path: PathBuf,
         increase_ulimit: bool,
+        custom_rye_dir_name: Option<&str>
     ) -> anyhow::Result<()> {
         info!("venv path : {desired_venv_path:?}");
         if desired_venv_path.exists() {
@@ -93,12 +94,13 @@ impl Runner {
                 .context("failed to create venv using uv")?,
             // ensure a "pyproject.toml" file exists in this directory
             Runner::Rye => {
-                if !bin_exists("rye")? {
+                let home_dir = dir_name_to_home_dir(custom_rye_dir_name)?;
+                if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir.clone()))? {
                     info!("rye not found in path, trying to create venv using other methods");
                     // try source \"$HOME/.rye/env
                     if let Some(home_path) = std::env::var_os("HOME") {
                         info!("home path | {home_path:?}");
-                        let home = home_path.to_string_lossy().to_string();
+                        let home = home_dir.clone();
                         info!("sourcing rye's env");
                         match extract_real_output(
                             Command::new(SHELL)
@@ -117,7 +119,7 @@ impl Runner {
                                 Command::new(SHELL)
                                     .args([
                                         "-c",
-                                        &format!("cd {parent_dir} && {ulimit_cmd} {home}/.rye/shims/rye sync"),
+                                        &format!("cd {parent_dir} && {ulimit_cmd} {} sync", dir_to_rye_bin(home)),
                                     ])
                                     .output()
                                     .context(
@@ -212,12 +214,23 @@ impl Runner {
     }
 }
 
-pub fn get_python_bin_name() -> anyhow::Result<String> {
-    for potential_name in ["python3.11", "python3", "python", "py"] {
+pub fn get_python_bin_name(mut custom_rye_dir_name: Option<&str>) -> anyhow::Result<String> {
+    let mut py_dirs = vec!["python3.11".to_string(), "python3".to_string(), "python".to_string(), "py".to_string()];
+
+    if custom_rye_dir_name.is_some() {
+        let rye_py_path = format!("{}/.rye/self/bin/python", dir_name_to_home_dir(custom_rye_dir_name.take())?);
+        py_dirs.insert(0, rye_py_path);
+    };
+
+    for potential_name in py_dirs {
         let o = Command::new(SHELL)
             .args(["-c", &format!("{potential_name} --version")])
             .output()?;
-        if std::str::from_utf8(&o.stdout)?
+
+        if String::from_utf8_lossy(&o.stdout)
+            .trim()
+            .to_lowercase()
+            .contains(VALID_PYTHON_VERSION) || String::from_utf8_lossy(&o.stderr)
             .trim()
             .to_lowercase()
             .contains(VALID_PYTHON_VERSION)
@@ -229,13 +242,21 @@ pub fn get_python_bin_name() -> anyhow::Result<String> {
     }
     bail!("no valid python version found");
 }
-pub async fn get_runner(http_client: &Client, force_rye: bool) -> anyhow::Result<Runner> {
-    if bin_exists("rye")? {
+pub async fn get_runner(http_client: &Client, force_rye: bool, custom_rye_dir_name: Option<&str>) -> anyhow::Result<Runner> {
+    
+    let rye_bin_name = if custom_rye_dir_name.is_some() {
+        dir_to_rye_bin(dir_name_to_home_dir(custom_rye_dir_name)?)
+    }else{
+        "rye".to_string()
+    };
+
+    if bin_exists(&rye_bin_name)? {
         info!("rye exists, using rye as runner");
         return Ok(Runner::Rye);
-    }
+    };
+
     if !force_rye {
-        let valid_python_version_exists = get_python_bin_name().is_ok();
+        let valid_python_version_exists = get_python_bin_name(custom_rye_dir_name).is_ok();
 
         if valid_python_version_exists {
             info!("a valid python version exists");
@@ -249,7 +270,7 @@ pub async fn get_runner(http_client: &Client, force_rye: bool) -> anyhow::Result
 
     info!("installing rye");
     // successfully download rye, and check it exists on user's system
-    download_rye(http_client).await?;
+    download_rye(http_client, custom_rye_dir_name).await?;
 
     Ok(Runner::Rye)
 }
@@ -277,7 +298,7 @@ async fn download_uv() -> anyhow::Result<()> {
     info!("rye curl installer resp | {o:#?}");
 
     if !bin_exists("uv")? {
-        bail!("{}", std::str::from_utf8(&o.stderr)?);
+        bail!("{}", String::from_utf8_lossy(&o.stderr));
     }
 
     Ok(())
@@ -286,7 +307,7 @@ async fn download_uv() -> anyhow::Result<()> {
 // install rye without downloading additional dependencies
 // /usr/bin/gunzip
 // /usr/bin/curl
-pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
+pub async fn download_rye(client: &Client, custom_rye_dir_name: Option<&str>) -> anyhow::Result<()> {
     if cfg!(not(any(target_arch = "aarch64", target_arch = "x86_64"))) {
         if cfg!(not(any(target_os = "macos", target_os = "linux"))) {
             bail!("Unsupported operating system | Not macos or linux");
@@ -294,19 +315,22 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
         bail!("Unsupported CPU architecture | Not aarch64 or x86_64");
     };
 
+    let home_dir = dir_name_to_home_dir(custom_rye_dir_name)?;
+    let rye_home = format!("{}/.rye", home_dir);
+
     if bin_exists("gunzip")? && bin_exists("curl")? {
         // use bash to avoid pipefail error
-        let o = Command::new(SHELL).args(["-c", "curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION=\"3.11.9\" RYE_INSTALL_OPTION=\"--yes\" bash"]).output()?;
+        let o = Command::new(SHELL)
+        .env("RYE_HOME", rye_home.clone())
+        .args(["-c", &format!("curl -sSf https://rye.astral.sh/get | RYE_TOOLCHAIN_VERSION={VALID_PYTHON_VERSION} RYE_INSTALL_OPTION=\"--yes\" bash")]).output()?;
 
         info!("rye curl installer resp | {o:#?}");
 
-        if !bin_exists("rye")?
-            && !bin_exists(&format!(
-                "{:?}/.rye/shims/rye",
-                std::env::var_os("HOME").unwrap_or_default()
-            ))?
+        // dir_name_to_home_dir(home_dir)
+        // dir_to_rye_bin(home_dir)
+        if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))?
         {
-            bail!("{}", std::str::from_utf8(&o.stderr).unwrap());
+            bail!("{}", String::from_utf8_lossy(&o.stderr));
         }
         return Ok(());
     }
@@ -321,7 +345,7 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     let temp_dir = std::env::temp_dir();
     let temp_var_os = var_os("TMPDIR");
     info!("std temp dir {temp_dir:?} | {temp_var_os:?}");
-    let system_temp_dir = PathBuf::from(std::str::from_utf8(&system_temp_dir.stdout)?.trim());
+    let system_temp_dir = PathBuf::from(String::from_utf8_lossy(&system_temp_dir.stdout).trim());
     info!("system_temp_dir | {system_temp_dir:?}");
     let rye_installer_path = system_temp_dir.join(".ryeinstaller.oi");
     info!("rye_installer_path | {rye_installer_path:?}");
@@ -350,23 +374,40 @@ pub async fn download_rye(client: &Client) -> anyhow::Result<()> {
     info!("running rye installer binary {rye_installer_path:?}");
     let installer = Command::new(SHELL)
         .stdin(Stdio::null())
-        .env("RYE_TOOLCHAIN_VERSION", "3.11.9")
+        .env("RYE_TOOLCHAIN_VERSION", VALID_PYTHON_VERSION)
+        .env("RYE_HOME", rye_home)
         .args(["-c", &format!("/{rye_installer_path:?} self install --yes")])
         .output()?;
 
     info!("installer output {installer:?}");
 
     // rye bin or default rye bin path
-    if !bin_exists("rye")?
-        && !bin_exists(&format!(
-            "{:?}/.rye/shims/rye",
-            std::env::var_os("HOME").unwrap_or_default()
-        ))?
-    {
-        bail!("{}", std::str::from_utf8(&installer.stderr).unwrap());
+    if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))?{
+        bail!("{}", String::from_utf8_lossy(&installer.stderr));
     }
 
     Ok(())
+}
+
+pub fn dir_name_to_home_dir(custom_rye_dir_name: Option<&str>) -> anyhow::Result<String> {
+    let home = match std::env::var_os("HOME"){
+        Some(h) => h,
+        None => bail!("HOME env var not found"),
+    }; 
+    let mut base_home = PathBuf::from(home);
+    
+    if custom_rye_dir_name.is_some() {
+        base_home = base_home.join(custom_rye_dir_name.unwrap());
+    };
+
+    Ok(base_home.to_string_lossy().to_string())
+}
+
+pub fn dir_to_rye_bin(path: String) -> String {
+    format!(
+        "{:?}/.rye/shims/rye",
+        path
+    ).replace("\"", "")
 }
 
 /// Uncompress a Gz Encoded vector
