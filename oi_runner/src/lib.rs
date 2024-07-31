@@ -96,6 +96,11 @@ impl Runner {
             // ensure a "pyproject.toml" file exists in this directory
             Runner::Rye => {
                 let home_dir = dir_name_to_home_dir(custom_rye_dir_name)?;
+                let rye_bin_name = if custom_rye_dir_name.is_some() {
+                    dir_to_rye_bin(home_dir.clone())
+                } else {
+                    "rye".to_string()
+                };
                 if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir.clone()))? {
                     info!("rye not found in path, trying to create venv using other methods");
                     // try source \"$HOME/.rye/env
@@ -108,7 +113,7 @@ impl Runner {
                                 .args([
                                     "-c",
                                     &format!(
-                                        "source '{home}/.rye/env' && cd {parent_dir} && {ulimit_cmd} rye sync"
+                                        "source '{home}/.rye/env' && cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"
                                     ),
                                 ])
                                 .output()?,
@@ -120,7 +125,7 @@ impl Runner {
                                 Command::new(SHELL)
                                     .args([
                                         "-c",
-                                        &format!("cd {parent_dir} && {ulimit_cmd} {} sync", dir_to_rye_bin(home)),
+                                        &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
                                     ])
                                     .output()
                                     .context(
@@ -131,21 +136,19 @@ impl Runner {
                     } else {
                         // TODO: remove later
                         Command::new(SHELL)
-                            .args(["-c", &format!("cd {parent_dir} && {ulimit_cmd} rye sync")])
+                            .args([
+                                "-c",
+                                &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
+                            ])
                             .output()
                             .context("failed to create venv forcefully using rye")?
                     }
                 } else {
                     info!("rye found in path, creating venv using rye");
-                    let rye_bin_name = if custom_rye_dir_name.is_some() {
-                        dir_to_rye_bin(dir_name_to_home_dir(custom_rye_dir_name)?)
-                    } else {
-                        "rye".to_string()
-                    };
                     Command::new(SHELL)
                         .args([
                             "-c",
-                            &format!("cd {parent_dir} && {ulimit_cmd} {} sync", rye_bin_name),
+                            &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
                         ])
                         .output()
                         .context("failed to create venv using rye")?
