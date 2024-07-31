@@ -143,7 +143,10 @@ impl Runner {
                         "rye".to_string()
                     };
                     Command::new(SHELL)
-                        .args(["-c", &format!("cd {parent_dir} && {ulimit_cmd} {} sync", rye_bin_name)])
+                        .args([
+                            "-c",
+                            &format!("cd {parent_dir} && {ulimit_cmd} {} sync", rye_bin_name),
+                        ])
                         .output()
                         .context("failed to create venv using rye")?
                 }
