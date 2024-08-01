@@ -15,6 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => false,
     };
 
+    let use_custom_rye_dir = match cli_args.get(2).map(|arg| arg.as_str()).unwrap_or("false") {
+        "true" => true,
+        "false" => false,
+        _ => false,
+    };
+
     log::info!("use_path_name_with_spaces : {use_path_name_with_spaces}");
 
     let mut base_path = std::env::current_dir()?;
@@ -22,15 +28,39 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if use_path_name_with_spaces {
         base_path = base_path.join("dir with spaces");
     }
+    // !!!!!!!!!!!
+    let custom_rye_dir_name = if use_custom_rye_dir {
+        Some(".oi")
+    } else {
+        None
+    };
 
-    let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), false).await?;
+    // let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), false, None).await?;
+    let oi_runner =
+        oi_runner::get_runner(&reqwest::Client::new(), true, custom_rye_dir_name).await?;
     log::info!("runner : {oi_runner:?}");
+
+    if custom_rye_dir_name.is_some() {
+        let p = oi_runner::dir_to_rye_bin(
+            oi_runner::dir_name_to_home_dir(custom_rye_dir_name).unwrap(),
+        );
+        println!(">>> {p}");
+        assert!(std::path::PathBuf::from(p).exists());
+    }
+
+    let py_bin_name = oi_runner::get_python_bin_name(custom_rye_dir_name);
+
+    assert!(py_bin_name.is_ok());
+
+    if custom_rye_dir_name.is_some() {
+        assert!(py_bin_name.unwrap().contains(".rye"));
+    }
 
     let venv_path = base_path.join(".venv");
 
-    log::info!("venv_path : {venv_path:?}");
+    log::info!("t : {venv_path:?}");
 
-    oi_runner.create_venv(venv_path.clone(), true)?;
+    oi_runner.create_venv(venv_path.clone(), true, custom_rye_dir_name)?;
 
     let pyproject_file_path = base_path.join("pyproject.toml");
 

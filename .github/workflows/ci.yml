@@ -80,9 +80,14 @@ jobs:
             override: true
 
       - name: Test Full Example 1
-        run: cargo run
+        run: rm -rf $HOME/.oi && rm -rf $HOME/.rye && cargo run -- false false
       
       - name: Test Full Example 2
-        run: cargo run -- true
+        run: rm -rf $HOME/.oi && rm -rf $HOME/.rye && cargo run -- true true
 
-        
+      - name: Test Full Example 3
+        run: rm -rf $HOME/.oi && rm -rf $HOME/.rye && cargo run -- false true
+
+      - name: Test Full Example 4
+        run: rm -rf $HOME/.oi && rm -rf $HOME/.rye && cargo run -- true false
+      
