@@ -15,6 +15,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         _ => false,
     };
 
+    let use_custom_rye_dir = match cli_args.get(2).map(|arg| arg.as_str()).unwrap_or("false") {
+        "true" => true,
+        "false" => false,
+        _ => false,
+    };
+
     log::info!("use_path_name_with_spaces : {use_path_name_with_spaces}");
 
     let mut base_path = std::env::current_dir()?;
@@ -23,7 +29,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         base_path = base_path.join("dir with spaces");
     }
     // !!!!!!!!!!!
-    let custom_rye_dir_name = Some(".oi");
+    let custom_rye_dir_name = if use_custom_rye_dir {
+        Some(".oi")
+    } else {
+        None
+    };
 
     // let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), false, None).await?;
     let oi_runner =
