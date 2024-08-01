@@ -96,65 +96,16 @@ impl Runner {
             // ensure a "pyproject.toml" file exists in this directory
             Runner::Rye => {
                 let home_dir = dir_name_to_home_dir(custom_rye_dir_name)?;
-                let rye_bin_name = if custom_rye_dir_name.is_some() {
-                    dir_to_rye_bin(home_dir.clone())
-                } else {
-                    "rye".to_string()
-                };
+                let rye_bin_name = dir_to_rye_bin(home_dir.clone());
                 info!("rye bin name | {rye_bin_name} | home dir | {home_dir} |custom_rye_dir_name | {custom_rye_dir_name:?}");
 
-                if !bin_exists("rye")? {
-                    info!("rye not found in path, trying to create venv using other methods");
-                    // try source \"$HOME/.rye/env
-                    if let Some(home_path) = std::env::var_os("HOME") {
-                        info!("home path | {home_path:?}");
-                        let home = home_dir.clone();
-                        info!("sourcing rye's env");
-                        match extract_real_output(
-                            Command::new(SHELL)
-                                .args([
-                                    "-c",
-                                    &format!(
-                                        "source '{home}/.rye/env' && cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"
-                                    ),
-                                ])
-                                .output()?,
-                        ) {
-                            Ok(o) => o,
-                            Err(e) => {
-                                error!("failed to source rye's env | {e}");
-                                info!("using direct link to rye shim");
-                                Command::new(SHELL)
-                                    .args([
-                                        "-c",
-                                        &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
-                                    ])
-                                    .output()
-                                    .context(
-                                        "Failed to create venv using direct link to rye shim",
-                                    )?
-                            }
-                        }
-                    } else {
-                        // TODO: remove later
-                        Command::new(SHELL)
-                            .args([
-                                "-c",
-                                &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
-                            ])
-                            .output()
-                            .context("failed to create venv forcefully using rye")?
-                    }
-                } else {
-                    info!("rye found in path, creating venv using rye");
-                    Command::new(SHELL)
-                        .args([
-                            "-c",
-                            &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
-                        ])
-                        .output()
-                        .context("failed to create venv using rye")?
-                }
+                Command::new(SHELL)
+                    .args([
+                        "-c",
+                        &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
+                    ])
+                    .output()
+                    .context("failed to create venv forcefully using rye")?
             }
         };
 
