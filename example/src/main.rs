@@ -50,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let venv_path = base_path.join(".venv");
 
-    log::info!("venv_path : {venv_path:?}");
+    log::info!("t : {venv_path:?}");
 
     oi_runner.create_venv(venv_path.clone(), true, custom_rye_dir_name)?;
 

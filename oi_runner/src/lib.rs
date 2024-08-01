@@ -101,7 +101,9 @@ impl Runner {
                 } else {
                     "rye".to_string()
                 };
-                if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir.clone()))? {
+                info!("rye bin name | {rye_bin_name} | home dir | {home_dir} |custom_rye_dir_name | {custom_rye_dir_name:?}");
+
+                if !bin_exists("rye")? {
                     info!("rye not found in path, trying to create venv using other methods");
                     // try source \"$HOME/.rye/env
                     if let Some(home_path) = std::env::var_os("HOME") {
