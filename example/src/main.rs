@@ -48,6 +48,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         assert!(std::path::PathBuf::from(p).exists());
     }
 
+    let py_bin_name = oi_runner::get_python_bin_name(custom_rye_dir_name);
+
+    assert!(py_bin_name.is_ok());
+
+    if custom_rye_dir_name.is_some() {
+        assert!(py_bin_name.unwrap().contains(".rye"));
+    }
+
     let venv_path = base_path.join(".venv");
 
     log::info!("t : {venv_path:?}");

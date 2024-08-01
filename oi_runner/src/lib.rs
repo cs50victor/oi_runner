@@ -179,21 +179,17 @@ impl Runner {
     }
 }
 
-pub fn get_python_bin_name(mut custom_rye_dir_name: Option<&str>) -> anyhow::Result<String> {
-    let mut py_dirs = vec![
-        "python3.11".to_string(),
-        "python3".to_string(),
-        "python".to_string(),
-        "py".to_string(),
-    ];
-
-    if custom_rye_dir_name.is_some() {
-        let rye_py_path = format!(
+pub fn get_python_bin_name(custom_rye_dir_name: Option<&str>) -> anyhow::Result<String> {
+    let py_dirs = vec![
+        format!(
             "{}/.rye/self/bin/python",
-            dir_name_to_home_dir(custom_rye_dir_name.take())?
-        );
-        py_dirs.insert(0, rye_py_path);
-    };
+            dir_name_to_home_dir(custom_rye_dir_name)?
+        ),
+        "python3.11".into(),
+        "python3".into(),
+        "python".into(),
+        "py".into(),
+    ];
 
     for potential_name in py_dirs {
         let o = Command::new(SHELL)
