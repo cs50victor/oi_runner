@@ -17,6 +17,7 @@ const VALID_PYTHON_VERSION: &str = "3.11.9";
 
 #[cfg(target_os = "macos")]
 const SHELL: &str = "zsh";
+// #[cfg(unix)]
 #[cfg(target_os = "linux")]
 const SHELL: &str = "sh";
 #[cfg(windows)]
@@ -24,7 +25,7 @@ const SHELL: &str = "powershell";
 
 #[derive(Debug)]
 pub enum Runner {
-    PythonAndUv,
+    Uv,
     Rye,
 }
 
@@ -50,12 +51,32 @@ pub fn extract_real_output(output: Output) -> anyhow::Result<Output> {
     }
     Ok(output)
 }
+
 impl Runner {
+    pub fn get_bin_path(&self, custom_dir_name: Option<&str>) -> anyhow::Result<String> {
+        let home_dir_path = dir_name_to_home_dir(custom_dir_name)?;
+        let bin_path = match self {
+            Runner::Uv => dir_to_uv_bin(home_dir_path),
+            Runner::Rye => dir_to_rye_bin(home_dir_path),
+        };
+        if !PathBuf::from(&bin_path).exists() {
+            let bin_alias = match self {
+                Runner::Uv => "uv",
+                Runner::Rye => "rye",
+            };
+            let (exists, path) = bin_exists(bin_alias)?;
+            if !exists {
+                bail!("binary with name / alias {bin_alias} not found");
+            }
+            return Ok(path);
+        }
+        Ok(bin_path)
+    }
     pub fn create_venv(
         &self,
         desired_venv_path: PathBuf,
         increase_ulimit: bool,
-        custom_rye_dir_name: Option<&str>,
+        custom_runner_dir_name: Option<&str>,
     ) -> anyhow::Result<()> {
         info!("venv path : {desired_venv_path:?}");
         if desired_venv_path.exists() {
@@ -82,27 +103,28 @@ impl Runner {
             ""
         };
 
+        let runner_bin_path = self.get_bin_path(custom_runner_dir_name)?;
         let o = match self {
-            Runner::PythonAndUv => Command::new("sh")
-                .args([
-                    "-c",
-                    &format!(
-                        "{ulimit_cmd} uv venv -p {VALID_PYTHON_VERSION} '{}'",
-                        desired_venv_path.to_string_lossy().as_ref()
-                    ),
-                ])
-                .output()
-                .context("failed to create venv using uv")?,
-            // ensure a "pyproject.toml" file exists in this directory
-            Runner::Rye => {
-                let home_dir = dir_name_to_home_dir(custom_rye_dir_name)?;
-                let rye_bin_name = dir_to_rye_bin(home_dir.clone());
-                info!("rye bin name | {rye_bin_name} | home dir | {home_dir} |custom_rye_dir_name | {custom_rye_dir_name:?}");
+            // uv creates a venv for us during run `uv run ....`
+            Runner::Uv => {
+                info!("uv bin path | {runner_bin_path} | custom_rye_dir_name | {custom_runner_dir_name:?}");
 
                 Command::new(SHELL)
                     .args([
                         "-c",
-                        &format!("cd {parent_dir} && {ulimit_cmd} {rye_bin_name} sync"),
+                        &format!("cd {parent_dir} && {runner_bin_path} venv && {ulimit_cmd} {runner_bin_path} pip install -r pyproject.toml"),
+                    ])
+                    .output()
+                    .context("failed to create venv forcefully using rye")?
+            }
+            // ensure a "pyproject.toml" file exists in this directory
+            Runner::Rye => {
+                info!("rye bin path | {runner_bin_path} | custom_rye_dir_name | {custom_runner_dir_name:?}");
+
+                Command::new(SHELL)
+                    .args([
+                        "-c",
+                        &format!("cd {parent_dir} && {ulimit_cmd} {runner_bin_path} sync"),
                     ])
                     .output()
                     .context("failed to create venv forcefully using rye")?
@@ -127,55 +149,6 @@ impl Runner {
         let venv_path_str = venv_path.join("bin/activate");
 
         format!("'{}'", venv_path_str.to_string_lossy())
-    }
-
-    pub fn install_pip_packages(
-        &self,
-        venv_path: PathBuf,
-        pyproject_toml_path: PathBuf,
-        increase_ulimit: bool,
-    ) -> anyhow::Result<()> {
-        let pyproject_toml_path = format!("'{}'", pyproject_toml_path.to_string_lossy());
-
-        info!("pyproject file_path : {pyproject_toml_path}");
-
-        let ulimit_cmd = if increase_ulimit {
-            "ulimit -n 4096 && "
-        } else {
-            ""
-        };
-
-        match self {
-            // rye sync already handles package installation from pyproject.toml
-            Runner::Rye => Ok(()),
-            Runner::PythonAndUv => {
-                let source_cmd = self.get_source_cmd(venv_path);
-
-                #[cfg(unix)]
-                let source_and_pip_install_cmd = &format!(
-                    "source {source_cmd} && {ulimit_cmd} uv pip install -r {pyproject_toml_path}"
-                );
-
-                #[cfg(windows)]
-                let source_and_pip_install_cmd = &format!(
-                    "{source_cmd} && {ulimit_cmd} uv pip install -r {pyproject_toml_path}"
-                );
-
-                #[cfg(unix)]
-                let o = Command::new(SHELL)
-                    .args(["-c", source_and_pip_install_cmd])
-                    .output()?;
-
-                #[cfg(windows)]
-                let o = Command::new(source_and_pip_install_cmd).output()?;
-
-                info!(
-                    "source and uv pip install output > {}",
-                    output_to_string(&o)?
-                );
-                Ok(())
-            }
-        }
     }
 }
 
@@ -215,67 +188,146 @@ pub fn get_python_bin_name(custom_rye_dir_name: Option<&str>) -> anyhow::Result<
 
 pub async fn get_runner(
     http_client: &Client,
-    force_rye: bool,
-    custom_rye_dir_name: Option<&str>,
+    custom_runner_dir_name: Option<&str>,
 ) -> anyhow::Result<Runner> {
-    let rye_bin_name = if custom_rye_dir_name.is_some() {
-        dir_to_rye_bin(dir_name_to_home_dir(custom_rye_dir_name)?)
+    // TODO: add support for uv runners without a custom dir
+    let using_custom_dir = custom_runner_dir_name.is_some();
+    let uv_bin_name = if using_custom_dir {
+        dir_to_uv_bin(dir_name_to_home_dir(custom_runner_dir_name)?)
+    } else {
+        "uv".to_string()
+    };
+
+    if bin_exists(&uv_bin_name)?.0 && using_custom_dir {
+        info!("uv exists, using uv as runner");
+        return Ok(Runner::Uv);
+    };
+
+    if using_custom_dir {
+        match download_uv(custom_runner_dir_name).await {
+            Ok(_) => return Ok(Runner::Uv),
+            Err(e) => {
+                info!("failed to download uv, falling back to rye, error: {e:?}");
+            }
+        }
+    }
+
+    let rye_bin_name = if using_custom_dir {
+        dir_to_rye_bin(dir_name_to_home_dir(custom_runner_dir_name)?)
     } else {
         "rye".to_string()
     };
 
-    if bin_exists(&rye_bin_name)? {
+    if bin_exists(&rye_bin_name)?.0 {
         info!("rye exists, using rye as runner");
         return Ok(Runner::Rye);
     };
 
-    if !force_rye {
-        let valid_python_version_exists = get_python_bin_name(custom_rye_dir_name).is_ok();
-
-        if valid_python_version_exists {
-            info!("a valid python version exists");
-            let uv_exists = bin_exists("uv")?;
-            if uv_exists || download_uv().await.is_ok() {
-                return Ok(Runner::PythonAndUv);
-            }
-        }
-        info!("a valid python version wasn't found or a valid python version was found but 'uv' wasn't found ");
-    }
-
-    info!("installing rye");
+    info!("rye not found, installing rye");
     // successfully download rye, and check it exists on user's system
-    download_rye(http_client, custom_rye_dir_name).await?;
+    download_rye(http_client, custom_runner_dir_name).await?;
 
     Ok(Runner::Rye)
 }
 
-fn bin_exists(bin_name: &str) -> anyhow::Result<bool> {
+fn bin_exists(bin_name: &str) -> anyhow::Result<(bool, String)> {
     let o = Command::new(SHELL)
         .args(["-c", &format!("command -v {bin_name}")])
         .output()?;
 
     info!("{bin_name} | {o:?}");
 
-    Ok(!o.stdout.is_empty())
+    Ok((
+        !o.stdout.is_empty(),
+        String::from_utf8_lossy(&o.stdout).trim().to_string(),
+    ))
 }
 
-async fn download_uv() -> anyhow::Result<()> {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let o = Command::new(SHELL)
-        .args(["-c", "curl -LsSf https://astral.sh/uv/install.sh | sh"])
-        .output()?;
+async fn download_uv(dir: Option<&str>) -> anyhow::Result<()> {
+    let uv_home = dir_name_to_home_dir(dir)?;
+
+    info!("uv home dir  | {uv_home}");
+
+    #[cfg(unix)]
+    let install_script = if bin_exists("curl")?.0 {
+        format!("curl -LsSf https://astral.sh/uv/install.sh | CARGO_DIST_FORCE_INSTALL_DIR={uv_home} sh")
+    } else {
+        bail!("curl is not installed. Unable to download uv.");
+    };
+
     #[cfg(windows)]
+    let install_script = format!(
+        "iwr https://astral.sh/uv/install.ps1 -useb | CARGO_DIST_FORCE_INSTALL_DIR={uv_home} iex"
+    );
+
+    println!("install_script, {install_script}");
     let o = Command::new(SHELL)
-        .args(["-c", "irm https://astral.sh/uv/install.ps1 | iex"])
-        .output()?;
+        .env("CARGO_DIST_FORCE_INSTALL_DIR", uv_home.clone())
+        .args(["-c", &install_script])
+        .output()
+        .context("Failed to install uv in custom location")?;
 
-    info!("rye curl installer resp | {o:#?}");
+    let uv_bin_path = dir_to_uv_bin(uv_home);
 
-    if !bin_exists("uv")? {
-        bail!("{}", String::from_utf8_lossy(&o.stderr));
+    info!("uv_bin_path, {uv_bin_path:?}");
+    if !PathBuf::from(uv_bin_path.clone()).exists() {
+        error!("uv curl output {:#?}", output_to_string(&o));
+        bail!("uv installation script ran but uv wasn't found in the expected location");
     }
 
+    let bin_alias = if dir.is_none() {
+        "uv".to_owned()
+    } else {
+        uv_bin_path
+    };
+
+    // download python using uv using `uv python install 3.11.8`
+    let output = Command::new(bin_alias)
+        .args(["python", "install", VALID_PYTHON_VERSION])
+        .output()
+        .context("Failed to install Python using uv")?;
+
+    info!("uv python install output {:#?}", output_to_string(&output));
+
+    if !output.status.success() {
+        bail!(
+            "Failed to install Python {}: {}",
+            VALID_PYTHON_VERSION,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    info!(
+        "Successfully installed Python {} using uv",
+        VALID_PYTHON_VERSION
+    );
+
     Ok(())
+}
+
+pub fn parse_uv_version_output(version_info: &str) -> anyhow::Result<(u16, u16, u16)> {
+    // Remove "uv" and split by opening bracket
+    let version_str = version_info
+        .trim_start_matches("uv")
+        .split('(')
+        .next()
+        .ok_or_else(|| anyhow!("Invalid version format"))?
+        .trim();
+
+    // Parse the version number
+    let numbers = version_str.split('.').collect::<Vec<_>>();
+    if numbers.len() != 3 {
+        bail!("Invalid version format, expected 3 numbers separated by dots");
+    }
+    let numbers = numbers
+        .iter()
+        .map(|s| s.parse::<u16>())
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok((numbers[0], numbers[1], numbers[2]))
+}
+
+pub fn dir_to_uv_bin(path: String) -> String {
+    format!("{:?}/bin/uv", path).replace("\"", "")
 }
 
 // install rye without downloading additional dependencies
@@ -295,7 +347,7 @@ pub async fn download_rye(
     let home_dir = dir_name_to_home_dir(custom_rye_dir_name)?;
     let rye_home = format!("{}/.rye", home_dir);
 
-    if bin_exists("gunzip")? && bin_exists("curl")? {
+    if bin_exists("gunzip")?.0 && bin_exists("curl")?.0 {
         // use bash to avoid pipefail error
         let o = Command::new(SHELL)
         .env("RYE_HOME", rye_home.clone())
@@ -305,7 +357,7 @@ pub async fn download_rye(
 
         // dir_name_to_home_dir(home_dir)
         // dir_to_rye_bin(home_dir)
-        if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))? {
+        if !bin_exists("rye")?.0 && !bin_exists(&dir_to_rye_bin(home_dir))?.0 {
             bail!("{}", String::from_utf8_lossy(&o.stderr));
         }
         return Ok(());
@@ -358,22 +410,22 @@ pub async fn download_rye(
     info!("installer output {installer:?}");
 
     // rye bin or default rye bin path
-    if !bin_exists("rye")? && !bin_exists(&dir_to_rye_bin(home_dir))? {
+    if !bin_exists("rye")?.0 && !bin_exists(&dir_to_rye_bin(home_dir))?.0 {
         bail!("{}", String::from_utf8_lossy(&installer.stderr));
     }
 
     Ok(())
 }
 
-pub fn dir_name_to_home_dir(custom_rye_dir_name: Option<&str>) -> anyhow::Result<String> {
+pub fn dir_name_to_home_dir(custom_runner_dir: Option<&str>) -> anyhow::Result<String> {
     let home = match std::env::var_os("HOME") {
         Some(h) => h,
         None => bail!("HOME env var not found"),
     };
     let mut base_home = PathBuf::from(home);
 
-    if custom_rye_dir_name.is_some() {
-        base_home = base_home.join(custom_rye_dir_name.unwrap());
+    if custom_runner_dir.is_some() {
+        base_home = base_home.join(custom_runner_dir.unwrap());
     };
 
     Ok(base_home.to_string_lossy().to_string())
@@ -435,4 +487,125 @@ pub async fn download_file<'a>(client: &Client, url: &str) -> anyhow::Result<Dow
     Ok(download_resp)
 }
 
-// TODO: add tests
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::unix::process::ExitStatusExt;
+
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_output_to_string() {
+        let output = Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"Hello".to_vec(),
+            stderr: b"".to_vec(),
+        };
+        let result = output_to_string(&output).unwrap();
+        assert!(result.contains("Hello"));
+
+        let output_with_error = Output {
+            status: std::process::ExitStatus::from_raw(1),
+            stdout: b"".to_vec(),
+            stderr: b"Error".to_vec(),
+        };
+        assert!(output_to_string(&output_with_error).is_err());
+    }
+
+    #[test]
+    fn test_extract_real_output() {
+        let output = Output {
+            status: std::process::ExitStatus::from_raw(0),
+            stdout: b"Success".to_vec(),
+            stderr: b"".to_vec(),
+        };
+        let result = extract_real_output(output).unwrap();
+        assert_eq!(result.stdout, b"Success");
+
+        let output_with_error = Output {
+            status: std::process::ExitStatus::from_raw(1),
+            stdout: b"".to_vec(),
+            stderr: b"Error".to_vec(),
+        };
+        assert!(extract_real_output(output_with_error).is_err());
+    }
+
+    #[test]
+    fn test_dir_name_to_home_dir() {
+        std::env::set_var("HOME", "/home/user");
+
+        let result = dir_name_to_home_dir(None).unwrap();
+        assert_eq!(result, "/home/user");
+
+        let result = dir_name_to_home_dir(Some("custom")).unwrap();
+        assert_eq!(result, "/home/user/custom");
+    }
+
+    #[test]
+    fn test_dir_to_rye_bin() {
+        let result = dir_to_rye_bin("/home/user".to_string());
+        assert_eq!(result, "/home/user/.rye/shims/rye");
+    }
+
+    #[test]
+    fn test_dir_to_uv_bin() {
+        let result = dir_to_uv_bin("/home/user/.custom".to_string());
+        assert_eq!(result, "/home/user/.custom/bin/uv");
+    }
+
+    #[test]
+    fn test_decode_gz_bytes_to_file() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+
+        // Create a simple gzipped content
+        let content = b"Hello, World!";
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        encoder.write_all(content).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        decode_gz_bytes_to_file(compressed, &file_path).unwrap();
+
+        assert!(file_path.exists());
+        let file_content = std::fs::read_to_string(file_path).unwrap();
+        assert_eq!(file_content, "Hello, World!");
+    }
+
+    #[test]
+    fn test_bin_exists() {
+        // This test assumes that 'ls' exists on the system
+        assert!(bin_exists("ls").unwrap().0);
+        assert!(!bin_exists("non_existent_binary").unwrap().0);
+    }
+    // uv version number tests
+
+    #[test]
+    fn test_parse_curl_installation_version() {
+        let version_info = "uv 0.3.1 (be17d132a 2024-08-21)";
+        assert_eq!(parse_uv_version_output(version_info).unwrap(), (0, 3, 1));
+    }
+
+    #[test]
+    fn test_parse_homebrew_installation_version() {
+        let version_info = "uv 0.3.0 (Homebrew 2024-08-20)";
+        assert_eq!(parse_uv_version_output(version_info).unwrap(), (0, 3, 0));
+    }
+
+    #[test]
+    fn test_parse_future_version() {
+        let version_info = "uv 1.2.3 (future release)";
+        assert_eq!(parse_uv_version_output(version_info).unwrap(), (1, 2, 3));
+    }
+
+    #[test]
+    fn test_invalid_format_no_uv_prefix() {
+        let version_info = "0.3.1 (no prefix)";
+        assert_eq!(parse_uv_version_output(version_info).unwrap(), (0, 3, 1));
+    }
+
+    #[test]
+    fn test_empty_string() {
+        let version_info = "";
+        assert!(parse_uv_version_output(version_info).is_err());
+    }
+}
