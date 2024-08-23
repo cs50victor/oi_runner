@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let py_bin_name = oi_runner::get_python_bin_name(custom_runner_dir_name);
 
     println!("py_bin_name : {py_bin_name:?}");
-    
+
     assert!(py_bin_name.is_ok());
 
     if custom_runner_dir_name.is_some() && matches!(oi_runner, oi_runner::Runner::Rye) {
