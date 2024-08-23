@@ -29,30 +29,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         base_path = base_path.join("dir with spaces");
     }
     // !!!!!!!!!!!
-    let custom_rye_dir_name = if use_custom_rye_dir {
+    let custom_runner_dir_name = if use_custom_rye_dir {
         Some(".oi")
     } else {
         None
     };
 
     // let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), false, None).await?;
-    let oi_runner =
-        oi_runner::get_runner(&reqwest::Client::new(), true, custom_rye_dir_name).await?;
+    let oi_runner = oi_runner::get_runner(&reqwest::Client::new(), custom_runner_dir_name).await?;
     log::info!("runner : {oi_runner:?}");
 
-    if custom_rye_dir_name.is_some() {
-        let p = oi_runner::dir_to_rye_bin(
-            oi_runner::dir_name_to_home_dir(custom_rye_dir_name).unwrap(),
-        );
+    if custom_runner_dir_name.is_some() {
+        let p = oi_runner.get_bin_path(custom_runner_dir_name).unwrap();
         println!(">>> {p}");
         assert!(std::path::PathBuf::from(p).exists());
     }
 
-    let py_bin_name = oi_runner::get_python_bin_name(custom_rye_dir_name);
+    let py_bin_name = oi_runner::get_python_bin_name(custom_runner_dir_name);
 
-    assert!(py_bin_name.is_ok());
+    println!("py_bin_name : {py_bin_name:?}");
 
-    if custom_rye_dir_name.is_some() {
+    if custom_runner_dir_name.is_some() && matches!(oi_runner, oi_runner::Runner::Rye) {
+        assert!(py_bin_name.is_ok());
         assert!(py_bin_name.unwrap().contains(".rye"));
     }
 
@@ -60,13 +58,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("t : {venv_path:?}");
 
-    oi_runner.create_venv(venv_path.clone(), true, custom_rye_dir_name)?;
+    oi_runner.create_venv(venv_path.clone(), true, custom_runner_dir_name)?;
 
     let pyproject_file_path = base_path.join("pyproject.toml");
 
     log::info!("pyproject file path : {}", pyproject_file_path.display());
 
-    oi_runner.install_pip_packages(venv_path, pyproject_file_path, true)?;
     log::info!("DONE");
     Ok(())
 }
