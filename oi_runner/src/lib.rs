@@ -77,7 +77,7 @@ impl Runner {
         info!("parent dir | {parent_dir}");
 
         let ulimit_cmd = if increase_ulimit {
-            "ulimit -n 4096 && "
+            "ulimit -n 16000 && "
         } else {
             ""
         };
@@ -140,7 +140,7 @@ impl Runner {
         info!("pyproject file_path : {pyproject_toml_path}");
 
         let ulimit_cmd = if increase_ulimit {
-            "ulimit -n 4096 && "
+            "ulimit -n 16000 && "
         } else {
             ""
         };
